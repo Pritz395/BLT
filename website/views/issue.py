@@ -436,6 +436,9 @@ def search_issues(request, template="search.html"):
     elif query[:6] == "label:":
         stype = "label"
         query = query[6:]
+    elif query[:4] == "cve:":
+        stype = "cve"
+        query = query[4:]
     if stype == "issue" or stype is None:
         if request.user.is_anonymous:
             issues = Issue.objects.filter(Q(description__icontains=query), hunt=None).exclude(Q(is_hidden=True))[0:20]
@@ -473,6 +476,41 @@ def search_issues(request, template="search.html"):
             "issues": Issue.objects.filter(Q(label__icontains=query), hunt=None).exclude(
                 Q(is_hidden=True) & ~Q(user_id=request.user.id)
             )[0:20],
+        }
+
+    if stype == "cve":
+        # Normalize CVE ID for exact match (case-insensitive, whitespace-trimmed)
+        from website.cache.cve_cache import normalize_cve_id
+
+        normalized_cve = normalize_cve_id(query)
+        if normalized_cve:
+            if request.user.is_anonymous:
+                issues = (
+                    Issue.objects.filter(cve_id=normalized_cve, hunt=None)
+                    .exclude(Q(is_hidden=True))
+                    .order_by("-created")[0:20]
+                )
+            else:
+                issues = (
+                    Issue.objects.filter(cve_id=normalized_cve, hunt=None)
+                    .exclude(Q(is_hidden=True) & ~Q(user_id=request.user.id))
+                    .order_by("-created")[0:20]
+                )
+        else:
+            issues = Issue.objects.none()
+
+        context = {
+            "query": query,
+            "type": stype,
+            "issues": issues,
+        }
+
+    if context is None:
+        # Fallback: if no context was set, return empty search
+        context = {
+            "query": query,
+            "type": stype,
+            "issues": Issue.objects.none(),
         }
 
     if request.user.is_authenticated:

@@ -163,6 +163,33 @@ class IssueViewSet(viewsets.ModelViewSet):
         if domain_url:
             queryset = queryset.filter(domain__url=domain_url)
 
+        cve_id = self.request.GET.get("cve_id")
+        if cve_id:
+            # Normalize CVE ID to match stored format (uppercase, trimmed)
+            from website.cache.cve_cache import normalize_cve_id
+
+            normalized_cve_id = normalize_cve_id(cve_id)
+            if normalized_cve_id:
+                queryset = queryset.filter(cve_id=normalized_cve_id)
+
+        cve_score_min = self.request.GET.get("cve_score_min")
+        if cve_score_min:
+            try:
+                min_score = float(cve_score_min)
+                queryset = queryset.filter(cve_score__gte=min_score)
+            except (ValueError, TypeError):
+                # Invalid value, ignore filter
+                pass
+
+        cve_score_max = self.request.GET.get("cve_score_max")
+        if cve_score_max:
+            try:
+                max_score = float(cve_score_max)
+                queryset = queryset.filter(cve_score__lte=max_score)
+            except (ValueError, TypeError):
+                # Invalid value, ignore filter
+                pass
+
         return queryset
 
     def get_issue_info(self, request, issue):
