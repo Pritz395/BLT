@@ -470,14 +470,10 @@ def cve_autocomplete(request):
     if not query.startswith("CVE-"):
         return JsonResponse({"results": []})
 
-    # Search for CVE IDs that start with the query (case-insensitive)
-    # Normalize the query to match stored format
-    from website.cache.cve_cache import normalize_cve_id
-
-    normalized_query = normalize_cve_id(query)
-
-    if not normalized_query:
-        return JsonResponse({"results": []})
+    # For autocomplete, just use the uppercase query directly
+    # Don't use normalize_cve_id() which validates against full CVE pattern
+    # Autocomplete needs to work with partial inputs like "CVE-2024-"
+    normalized_query = query
 
     # Apply visibility filters: exclude hunt issues and respect is_hidden rules
     queryset = Issue.objects.filter(cve_id__istartswith=normalized_query, hunt=None)
