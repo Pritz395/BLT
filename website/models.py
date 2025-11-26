@@ -9,7 +9,6 @@ from enum import Enum
 from urllib.parse import parse_qs, urlparse
 
 import pytz
-import requests
 from annoying.fields import AutoOneToOneField
 from captcha.fields import CaptchaField
 from django.conf import settings
@@ -31,6 +30,8 @@ from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from mdeditor.fields import MDTextField
 from rest_framework.authtoken.models import Token
+
+from website.cache.cve_cache import get_cached_cve_score
 
 logger = logging.getLogger(__name__)
 
@@ -578,7 +579,7 @@ class Issue(models.Model):
     rewarded = models.PositiveIntegerField(default=0)  # money rewarded by the organization
     reporter_ip_address = models.GenericIPAddressField(null=True, blank=True)
     cve_id = models.CharField(max_length=16, null=True, blank=True)
-    cve_score = models.DecimalField(max_digits=2, decimal_places=1, null=True, blank=True)
+    cve_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     tags = models.ManyToManyField(Tag, blank=True)
     comments = GenericRelation("comments.Comment")
 
@@ -627,23 +628,14 @@ class Issue(models.Model):
     def get_cve_score(self):
         if self.cve_id is None:
             return None
-        try:
-            url = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=%s" % (self.cve_id)
-            response = requests.get(url).json()
-            results = response["resultsPerPage"]
-            if results != 0:
-                metrics = response["vulnerabilities"][0]["cve"]["metrics"]
-                if metrics:
-                    cvss_metric_v = next(iter(metrics))
-                    return metrics[cvss_metric_v][0]["cvssData"]["baseScore"]
-        except (requests.exceptions.HTTPError, requests.exceptions.ReadTimeout) as e:
-            logger.warning(f"Error fetching CVE score for {self.cve_id}: {e}")
-            return None
+        return get_cached_cve_score(self.cve_id)
 
     class Meta:
         ordering = ["-created"]
         indexes = [
             models.Index(fields=["domain", "status"], name="issue_domain_status_idx"),
+            models.Index(fields=["cve_id"], name="issue_cve_id_idx"),
+            models.Index(fields=["cve_score"], name="issue_cve_score_idx"),
         ]
 
 
