@@ -262,9 +262,12 @@ class TestWebSearchCve:
         response = web_client.get(url, {"query": "cve:CVE-2024-9999"})
         assert response.status_code == 200
         data = response.json()
+        issue_ids = [str(issue["pk"]) for issue in data["issues"]]
         # Hidden issue should not appear in results
-        issue_ids = [issue["pk"] for issue in data["issues"]]
         assert str(hidden_issue.id) not in issue_ids
+        # But the visible issue with this CVE from the fixture should still be present
+        visible_ids = {str(issue.id) for issue in issues_with_cve if issue.cve_id == "CVE-2024-9999"}
+        assert visible_ids & set(issue_ids), "Visible issues with this CVE should still be returned"
 
     def test_search_by_cve_orders_by_created_desc(self, web_client, issues_with_cve, test_domain, test_user):
         """Test that CVE search results are ordered by creation date descending."""
