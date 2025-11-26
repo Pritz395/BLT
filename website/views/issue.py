@@ -428,8 +428,9 @@ def cve_autocomplete(request):
     if not query or len(query) < 3:
         return JsonResponse({"results": []})
 
-    # Validate CVE format: must start with "CVE-" followed by digits
-    if not query.startswith("CVE-") or len(query) < 8:  # Minimum: "CVE-2024"
+    # Validate CVE format: must start with "CVE-"
+    # Allow shorter queries (3+ chars) for incremental autocomplete
+    if not query.startswith("CVE-"):
         return JsonResponse({"results": []})
 
     # Search for CVE IDs that start with the query (case-insensitive)
@@ -1375,14 +1376,16 @@ class IssueCreate(IssueBaseCreate, CreateView):
                 from website.cache.cve_cache import normalize_cve_id
 
                 obj.cve_id = normalize_cve_id(obj.cve_id) or obj.cve_id
-            try:
-                obj.cve_score = obj.get_cve_score()
-            except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException) as e:
-                # If CVE score fetch fails, continue without it
-                obj.cve_score = None
-                messages.warning(
-                    self.request, "Could not fetch CVE score at this time. Issue will be created without it."
-                )
+            # Populate cve_score if cve_id is provided
+            if obj.cve_id:
+                try:
+                    obj.cve_score = obj.get_cve_score()
+                except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException) as e:
+                    # If CVE score fetch fails, continue without it
+                    obj.cve_score = None
+                    messages.warning(
+                        self.request, "Could not fetch CVE score at this time. Issue will be created without it."
+                    )
 
             obj.user_agent = self.request.META.get("HTTP_USER_AGENT")
             obj.save()
