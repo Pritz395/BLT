@@ -12,7 +12,6 @@ from django.contrib.sites.shortcuts import get_current_site
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.files.storage import default_storage
 from django.core.mail import send_mail
-from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -297,23 +296,22 @@ class IssueViewSet(viewsets.ModelViewSet):
             return Response({"error": "Max limit of 5 images!"}, status=status.HTTP_400_BAD_REQUEST)
 
         data = super().create(request, *args, **kwargs).data
+        # Use select_for_update to prevent race conditions when fetching the created issue
+        issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
+
         # Normalize CVE ID and populate cve_score if cve_id is provided
-        # Use select_for_update within a transaction to prevent race conditions
-        with transaction.atomic():
-            issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
+        if issue and issue.cve_id:
+            from website.views.issue import normalize_and_populate_cve_score
 
-            if issue and issue.cve_id:
-                from website.views.issue import normalize_and_populate_cve_score
-
-                original_cve_id = issue.cve_id
-                normalize_and_populate_cve_score(issue)
-                update_fields = []
-                if issue.cve_id != original_cve_id:
-                    update_fields.append("cve_id")
-                if issue.cve_score is not None:
-                    update_fields.append("cve_score")
-                if update_fields:
-                    issue.save(update_fields=update_fields)
+            original_cve_id = issue.cve_id
+            normalize_and_populate_cve_score(issue)
+            update_fields = []
+            if issue.cve_id != original_cve_id:
+                update_fields.append("cve_id")
+            if issue.cve_score is not None:
+                update_fields.append("cve_score")
+            if update_fields:
+                issue.save(update_fields=update_fields)
 
         if tags:
             issue.tags.add(*tags)
