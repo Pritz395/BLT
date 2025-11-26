@@ -578,7 +578,7 @@ class Issue(models.Model):
     is_hidden = models.BooleanField(default=False)
     rewarded = models.PositiveIntegerField(default=0)  # money rewarded by the organization
     reporter_ip_address = models.GenericIPAddressField(null=True, blank=True)
-    cve_id = models.CharField(max_length=16, null=True, blank=True)
+    cve_id = models.CharField(max_length=20, null=True, blank=True)
     cve_score = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
     tags = models.ManyToManyField(Tag, blank=True)
     comments = GenericRelation("comments.Comment")
@@ -624,6 +624,15 @@ class Issue(models.Model):
 
     def get_absolute_url(self):
         return "/issue/" + str(self.id)
+
+    def clean(self):
+        """Validate model fields."""
+        super().clean()
+        if self.cve_id:
+            from website.cache.cve_cache import CVE_ID_PATTERN
+
+            if not CVE_ID_PATTERN.match(self.cve_id):
+                raise ValidationError(f"Invalid CVE ID format: {self.cve_id}")
 
     def get_cve_score(self):
         if self.cve_id is None:

@@ -15,6 +15,7 @@ from website.cache.cve_cache import (
     fetch_cve_score_from_api,
     get_cached_cve_score,
     get_cve_cache_key,
+    normalize_cve_id,
 )
 
 
@@ -24,6 +25,29 @@ def clear_cache():
     cache.clear()
     yield
     cache.clear()
+
+
+class TestNormalizeCveId:
+    """Test CVE ID normalization and validation."""
+
+    def test_valid_cve_id(self):
+        """Test that valid CVE IDs are normalized correctly."""
+        assert normalize_cve_id("CVE-2024-1234") == "CVE-2024-1234"
+        assert normalize_cve_id("cve-2024-1234") == "CVE-2024-1234"
+        assert normalize_cve_id("  CVE-2024-1234  ") == "CVE-2024-1234"
+
+    def test_invalid_cve_id_format(self):
+        """Test that invalid CVE IDs return empty string."""
+        assert normalize_cve_id("INVALID-ID") == ""
+        assert normalize_cve_id("CVE-2024") == ""
+        assert normalize_cve_id("CVE-2024-123") == ""  # Too short
+        assert normalize_cve_id("CVE-2024-12345678") == ""  # Too long
+        assert normalize_cve_id("not-a-cve") == ""
+
+    def test_empty_cve_id(self):
+        """Test that empty/None CVE IDs return empty string."""
+        assert normalize_cve_id("") == ""
+        assert normalize_cve_id(None) == ""
 
 
 class TestGetCveCacheKey:
@@ -330,18 +354,12 @@ class TestFetchCveScoreFromApi:
 
     @patch("website.cache.cve_cache.requests.get")
     def test_invalid_cve_id_format(self, mock_get):
-        """Test with invalid CVE ID format."""
-        mock_response = Mock()
-        mock_response.json.return_value = {"resultsPerPage": 0}
-        mock_response.raise_for_status = Mock()
-        mock_get.return_value = mock_response
-
+        """Test with invalid CVE ID format - should return None without API call."""
         result = fetch_cve_score_from_api("INVALID-ID")
 
         assert result is None
-        mock_get.assert_called_once()
-        # Ensure normalization happened
-        assert "INVALID-ID".upper() in mock_get.call_args[0][0]
+        # API should not be called for invalid CVE IDs (validation happens first)
+        mock_get.assert_not_called()
 
 
 class TestGetCachedCveScore:

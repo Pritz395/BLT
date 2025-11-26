@@ -3,14 +3,19 @@ CVE caching utilities for NVD API responses.
 """
 
 import logging
+import re
 import time
 from decimal import Decimal
+from urllib.parse import quote
 
 import requests
 from django.conf import settings
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# CVE ID format validation pattern: CVE-YYYY-NNNN (4-7 digits)
+CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,7}$")
 
 # Default cache timeout: 24 hours (86400 seconds)
 # CVE data doesn't change frequently, so long cache is appropriate
@@ -39,10 +44,14 @@ CVE_CACHE_LOCK_WAIT_INTERVAL = getattr(settings, "CVE_CACHE_LOCK_WAIT_INTERVAL",
 
 
 def normalize_cve_id(cve_id):
-    """Normalize CVE ID casing/whitespace to avoid duplicate cache keys."""
+    """Normalize and validate CVE ID format."""
     if not cve_id:
         return ""
-    return cve_id.strip().upper()
+    normalized = cve_id.strip().upper()
+    if not CVE_ID_PATTERN.match(normalized):
+        logger.warning("Invalid CVE ID format: %s", cve_id)
+        return ""
+    return normalized
 
 
 def get_cve_cache_key(cve_id):
@@ -126,7 +135,9 @@ def fetch_cve_score_from_api(cve_id):
 
     while attempt < CVE_API_MAX_RETRIES:
         try:
-            url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
+            # URL encode CVE ID to prevent injection attacks
+            encoded_cve_id = quote(cve_id, safe="")
+            url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={encoded_cve_id}"
             response = requests.get(url, timeout=CVE_API_TIMEOUT)
             response.raise_for_status()
 
@@ -260,11 +271,25 @@ def _acquire_cache_lock(lock_key):
 
 
 def _wait_for_cache_fill(cache_key, cve_id):
-    """Wait briefly for another worker to populate the cache."""
+    """
+    Wait briefly for another worker to populate the cache.
+    
+    Returns immediately if cache is populated, otherwise waits up to
+    CVE_CACHE_LOCK_WAIT_TIMEOUT seconds with short intervals to avoid
+    blocking the worker thread for extended periods.
+    """
     deadline = time.monotonic() + CVE_CACHE_LOCK_WAIT_TIMEOUT
-    while time.monotonic() < deadline:
+    iterations = 0
+    max_iterations = int(CVE_CACHE_LOCK_WAIT_TIMEOUT / CVE_CACHE_LOCK_WAIT_INTERVAL)
+
+    while iterations < max_iterations:
         cached_value, is_hit = _read_from_cache(cache_key, cve_id)
         if is_hit:
             return cached_value, True
-        time.sleep(CVE_CACHE_LOCK_WAIT_INTERVAL)
+        # Only sleep if we're not at the deadline
+        if time.monotonic() < deadline:
+            time.sleep(CVE_CACHE_LOCK_WAIT_INTERVAL)
+            iterations += 1
+        else:
+            break
     return None, False

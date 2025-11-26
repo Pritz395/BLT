@@ -296,7 +296,8 @@ class IssueViewSet(viewsets.ModelViewSet):
             return Response({"error": "Max limit of 5 images!"}, status=status.HTTP_400_BAD_REQUEST)
 
         data = super().create(request, *args, **kwargs).data
-        issue = Issue.objects.filter(id=data["id"]).first()
+        # Use select_for_update to prevent race conditions when fetching the created issue
+        issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
 
         # Normalize CVE ID and populate cve_score if cve_id is provided
         if issue and issue.cve_id:

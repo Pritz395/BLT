@@ -435,7 +435,13 @@ def normalize_and_populate_cve_score(issue_obj):
             issue_obj.cve_id = normalized
         try:
             issue_obj.cve_score = issue_obj.get_cve_score()
-        except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch CVE score for %s: %s",
+                issue_obj.cve_id,
+                e,
+                exc_info=True,
+            )
             issue_obj.cve_score = None
     return issue_obj
 
