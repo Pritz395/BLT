@@ -183,5 +183,3 @@ If you encounter issues setting up webhooks:
 1. Check the [BLT GitHub Issues](https://github.com/OWASP-BLT/BLT/issues)
 2. Review server logs for detailed error messages
 3. Create a new issue with details about your problem
-
-
