@@ -11,7 +11,6 @@ from django.core.cache import cache
 
 from website.cache.cve_cache import (
     CACHE_NONE,
-    CVE_API_MAX_RETRIES,
     fetch_cve_score_from_api,
     get_cached_cve_score,
     get_cve_cache_key,
@@ -220,9 +219,10 @@ class TestFetchCveScoreFromApi:
         assert result is None
         assert "Rate limit exceeded" in caplog.text
         assert "CVE-2024-1234" in caplog.text
-        assert mock_get.call_count == CVE_API_MAX_RETRIES
+        # Default max retries is 3
+        assert mock_get.call_count == 3
         # Retries happen max_retries - 1 times (final attempt does not sleep afterward)
-        assert mock_sleep.call_count == CVE_API_MAX_RETRIES - 1
+        assert mock_sleep.call_count == 2
 
     @patch("website.cache.cve_cache.requests.get")
     def test_http_error_non_429(self, mock_get, caplog):

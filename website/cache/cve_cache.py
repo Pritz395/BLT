@@ -17,30 +17,49 @@ logger = logging.getLogger(__name__)
 # CVE ID format validation pattern: CVE-YYYY-NNNN (4-7 digits)
 CVE_ID_PATTERN = re.compile(r"^CVE-\d{4}-\d{4,7}$")
 
-# Default cache timeout: 24 hours (86400 seconds)
-# CVE data doesn't change frequently, so long cache is appropriate
-CVE_CACHE_TIMEOUT = getattr(settings, "CVE_CACHE_TIMEOUT", 86400)
-
-# API timeout: 10 seconds (consistent with other API calls in codebase)
-CVE_API_TIMEOUT = getattr(settings, "CVE_API_TIMEOUT", 10)
-
-# Max attempts for API retries (used for 429 handling)
-CVE_API_MAX_RETRIES = getattr(settings, "CVE_API_MAX_RETRIES", 3)
-
-# Base delay (seconds) for exponential backoff when rate limited
-CVE_RATE_LIMIT_BACKOFF_BASE = getattr(settings, "CVE_RATE_LIMIT_BACKOFF_BASE", 0.5)
-
 # Cache key prefix
 CVE_CACHE_KEY_PREFIX = "cve"
 
 # Sentinel value to cache None results (distinguish from cache miss)
 CACHE_NONE = "<CACHED_NONE>"
 
-# Cache lock settings to avoid duplicate API calls
+# Cache lock settings
 CVE_CACHE_LOCK_SUFFIX = ":lock"
-CVE_CACHE_LOCK_TIMEOUT = getattr(settings, "CVE_CACHE_LOCK_TIMEOUT", 30)
-CVE_CACHE_LOCK_WAIT_TIMEOUT = getattr(settings, "CVE_CACHE_LOCK_WAIT_TIMEOUT", 5)
-CVE_CACHE_LOCK_WAIT_INTERVAL = getattr(settings, "CVE_CACHE_LOCK_WAIT_INTERVAL", 0.2)
+
+
+def _get_cache_timeout():
+    """Get cache timeout from settings (lazy)."""
+    return getattr(settings, "CVE_CACHE_TIMEOUT", 86400)
+
+
+def _get_api_timeout():
+    """Get API timeout from settings (lazy)."""
+    return getattr(settings, "CVE_API_TIMEOUT", 10)
+
+
+def _get_max_retries():
+    """Get max retries from settings (lazy)."""
+    return getattr(settings, "CVE_API_MAX_RETRIES", 3)
+
+
+def _get_backoff_base():
+    """Get backoff base from settings (lazy)."""
+    return getattr(settings, "CVE_RATE_LIMIT_BACKOFF_BASE", 0.5)
+
+
+def _get_lock_timeout():
+    """Get lock timeout from settings (lazy)."""
+    return getattr(settings, "CVE_CACHE_LOCK_TIMEOUT", 30)
+
+
+def _get_lock_wait_timeout():
+    """Get lock wait timeout from settings (lazy)."""
+    return getattr(settings, "CVE_CACHE_LOCK_WAIT_TIMEOUT", 5)
+
+
+def _get_lock_wait_interval():
+    """Get lock wait interval from settings (lazy)."""
+    return getattr(settings, "CVE_CACHE_LOCK_WAIT_INTERVAL", 0.2)
 
 
 def normalize_cve_id(cve_id):
@@ -132,13 +151,15 @@ def fetch_cve_score_from_api(cve_id):
 
     cve_id = normalized_id
     attempt = 0
+    max_retries = _get_max_retries()
+    api_timeout = _get_api_timeout()
 
-    while attempt < CVE_API_MAX_RETRIES:
+    while attempt < max_retries:
         try:
             # URL encode CVE ID to prevent injection attacks
             encoded_cve_id = quote(cve_id, safe="")
             url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={encoded_cve_id}"
-            response = requests.get(url, timeout=CVE_API_TIMEOUT)
+            response = requests.get(url, timeout=api_timeout)
             response.raise_for_status()
 
             data = response.json()
@@ -184,8 +205,8 @@ def fetch_cve_score_from_api(cve_id):
             return None
         except requests.exceptions.HTTPError as e:
             status_code = e.response.status_code if e.response else None
-            if status_code == 429 and attempt < CVE_API_MAX_RETRIES - 1:
-                wait_seconds = CVE_RATE_LIMIT_BACKOFF_BASE * (2**attempt)
+            if status_code == 429 and attempt < max_retries - 1:
+                wait_seconds = _get_backoff_base() * (2**attempt)
                 logger.warning(
                     "Rate limit exceeded when fetching CVE score for %s; retrying in %.2fs",
                     cve_id,
@@ -255,7 +276,7 @@ def _write_to_cache(cache_key, cve_id, score):
     """Persist score (including None) using sentinel value."""
     try:
         cache_value = CACHE_NONE if score is None else score
-        cache.set(cache_key, cache_value, timeout=CVE_CACHE_TIMEOUT)
+        cache.set(cache_key, cache_value, timeout=_get_cache_timeout())
         logger.debug("Cached CVE score for %s", cve_id)
     except Exception as e:  # noqa: BLE001  # pylint: disable=broad-except
         logger.warning("Error caching CVE score for %s: %s", cve_id, e)
@@ -264,7 +285,7 @@ def _write_to_cache(cache_key, cve_id, score):
 def _acquire_cache_lock(lock_key):
     """Attempt to acquire cache-backed lock."""
     try:
-        return cache.add(lock_key, True, timeout=CVE_CACHE_LOCK_TIMEOUT)
+        return cache.add(lock_key, True, timeout=_get_lock_timeout())
     except Exception as e:  # noqa: BLE001  # pylint: disable=broad-except
         logger.warning("Error acquiring cache lock %s: %s", lock_key, e)
         return False
@@ -275,12 +296,14 @@ def _wait_for_cache_fill(cache_key, cve_id):
     Wait briefly for another worker to populate the cache.
 
     Returns immediately if cache is populated, otherwise waits up to
-    CVE_CACHE_LOCK_WAIT_TIMEOUT seconds with short intervals to avoid
+    the configured wait timeout seconds with short intervals to avoid
     blocking the worker thread for extended periods.
     """
-    deadline = time.monotonic() + CVE_CACHE_LOCK_WAIT_TIMEOUT
+    wait_timeout = _get_lock_wait_timeout()
+    wait_interval = _get_lock_wait_interval()
+    deadline = time.monotonic() + wait_timeout
     iterations = 0
-    max_iterations = int(CVE_CACHE_LOCK_WAIT_TIMEOUT / CVE_CACHE_LOCK_WAIT_INTERVAL)
+    max_iterations = int(wait_timeout / wait_interval)
 
     while iterations < max_iterations:
         cached_value, is_hit = _read_from_cache(cache_key, cve_id)
@@ -288,7 +311,7 @@ def _wait_for_cache_fill(cache_key, cve_id):
             return cached_value, True
         # Only sleep if we're not at the deadline
         if time.monotonic() < deadline:
-            time.sleep(CVE_CACHE_LOCK_WAIT_INTERVAL)
+            time.sleep(wait_interval)
             iterations += 1
         else:
             break
