@@ -440,16 +440,11 @@ def normalize_and_populate_cve_score(issue_obj):
             # Only update if normalized value differs from original
             if normalized != issue_obj.cve_id:
                 issue_obj.cve_id = normalized
-            try:
-                issue_obj.cve_score = issue_obj.get_cve_score()
-            except Exception as e:
-                logger.warning(
-                    "Failed to fetch CVE score for %s: %s",
-                    issue_obj.cve_id,
-                    e,
-                    exc_info=True,
-                )
-                issue_obj.cve_score = None
+            
+            # Fetch CVE score from cache/API
+            # Note: get_cve_score() handles all network/API exceptions internally
+            # and returns None on any error, so no exception handling needed here
+            issue_obj.cve_score = issue_obj.get_cve_score()
     return issue_obj
 
 
