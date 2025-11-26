@@ -11,15 +11,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Add indexes for CVE fields
-        migrations.AddIndex(
-            model_name="issue",
-            index=models.Index(fields=["cve_id"], name="issue_cve_id_idx"),
-        ),
-        migrations.AddIndex(
-            model_name="issue",
-            index=models.Index(fields=["cve_score"], name="issue_cve_score_idx"),
-        ),
         # Fix CVE score max_digits to support scores up to 10.0
         migrations.AlterField(
             model_name="issue",
@@ -31,5 +22,14 @@ class Migration(migrations.Migration):
             model_name="issue",
             name="cve_id",
             field=models.CharField(blank=True, max_length=20, null=True),
+        ),
+        # Add indexes for CVE fields (after field alterations)
+        migrations.AddIndex(
+            model_name="issue",
+            index=models.Index(fields=["cve_id"], name="issue_cve_id_idx"),
+        ),
+        migrations.AddIndex(
+            model_name="issue",
+            index=models.Index(fields=["cve_score"], name="issue_cve_score_idx"),
         ),
     ]
