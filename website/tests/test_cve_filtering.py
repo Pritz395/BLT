@@ -177,6 +177,19 @@ class TestIssueViewSetCveFiltering:
         # Should return all issues (invalid filter ignored)
         assert response.data["count"] >= 4
 
+    def test_filter_by_cve_score_invalid_range(self, api_client, issues_with_cve):
+        """Test that invalid range (min > max) ignores both filters."""
+        url = "/api/v1/issues/"
+        # min=9.0, max=5.0 is invalid - both filters should be ignored
+        response = api_client.get(url, {"cve_score_min": "9.0", "cve_score_max": "5.0"})
+        assert response.status_code == status.HTTP_200_OK
+        # Should return all issues (both filters ignored due to invalid range)
+        assert response.data["count"] >= 4
+        # Verify that issues with scores outside the invalid range are still returned
+        scores = [float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"]]
+        # Should include issues with scores > 5.0 (like 9.8) since filters were ignored
+        assert any(score > 5.0 for score in scores) or len(scores) == 0
+
     def test_filter_combines_with_status(self, api_client, issues_with_cve):
         """Test that CVE filtering combines with other filters."""
         url = "/api/v1/issues/"

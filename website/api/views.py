@@ -176,37 +176,33 @@ class IssueViewSet(viewsets.ModelViewSet):
                 # Use case-insensitive matching to handle existing unnormalized data
                 queryset = queryset.filter(cve_id__iexact=normalized_cve_id)
 
+        # Parse and validate CVE score filters
         cve_score_min = self.request.GET.get("cve_score_min")
+        cve_score_max = self.request.GET.get("cve_score_max")
         min_score = None
+        max_score = None
+
+        # Parse cve_score_min
         if cve_score_min:
             try:
                 min_score = float(cve_score_min)
                 if min_score < 0 or min_score > 10:
-                    # Invalid range, ignore filter
                     logger.warning("Invalid cve_score_min value: %s (must be 0-10)", cve_score_min)
                     min_score = None
-                else:
-                    queryset = queryset.filter(cve_score__gte=min_score)
             except (ValueError, TypeError):
-                # Invalid value, ignore filter
                 logger.warning("Invalid cve_score_min value: %s (not a number)", cve_score_min)
 
-        cve_score_max = self.request.GET.get("cve_score_max")
-        max_score = None
+        # Parse cve_score_max
         if cve_score_max:
             try:
                 max_score = float(cve_score_max)
                 if max_score < 0 or max_score > 10:
-                    # Invalid range, ignore filter
                     logger.warning("Invalid cve_score_max value: %s (must be 0-10)", cve_score_max)
                     max_score = None
-                else:
-                    queryset = queryset.filter(cve_score__lte=max_score)
             except (ValueError, TypeError):
-                # Invalid value, ignore filter
                 logger.warning("Invalid cve_score_max value: %s (not a number)", cve_score_max)
 
-        # Validate that min <= max if both are provided
+        # Validate range BEFORE applying filters
         if min_score is not None and max_score is not None:
             if min_score > max_score:
                 logger.warning(
@@ -214,9 +210,14 @@ class IssueViewSet(viewsets.ModelViewSet):
                     min_score,
                     max_score,
                 )
-                # Remove both filters by reversing the queryset changes
-                # Since we can't easily undo filters, we'll just log the warning
-                # The query will return empty results which is the correct behavior
+                min_score = None
+                max_score = None
+
+        # Apply filters only if valid
+        if min_score is not None:
+            queryset = queryset.filter(cve_score__gte=min_score)
+        if max_score is not None:
+            queryset = queryset.filter(cve_score__lte=max_score)
 
         return queryset
 
