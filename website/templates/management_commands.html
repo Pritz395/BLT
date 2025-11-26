@@ -529,8 +529,7 @@
             }
             
             // Reset form and hide results/loading
-            // Use prototype method to avoid conflicts with input elements named "reset"
-            HTMLFormElement.prototype.reset.call(form);
+            form.reset();
             if (resultsSection) resultsSection.classList.add('hidden');
             if (loadingSection) loadingSection.classList.add('hidden');
             

@@ -103,11 +103,13 @@ This PR implements a comprehensive CVE (Common Vulnerabilities and Exposures) en
    - `0258_fix_cve_score_max_digits.py`: Fixes `max_digits` from 2 to 3
 
 6. **Model Updates** (`website/models.py`):
+
    - `get_cve_score()` now uses caching layer
    - CVE IDs normalized to uppercase on save in all creation paths
    - `cve_score` populated and saved when issues are created
 
 7. **Hunt Submission Fix** (`website/views/issue.py`):
+
    - Fixed `submit_bug()` to read `cve_id` from POST data
    - CVE IDs from hunt forms are now properly processed
 
