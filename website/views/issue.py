@@ -417,6 +417,29 @@ def remove_user_from_issue(request, id):
         return safe_redirect_request(request)
 
 
+def normalize_and_populate_cve_score(issue_obj):
+    """
+    Normalize CVE ID and populate score if available.
+    
+    Args:
+        issue_obj: Issue instance to normalize and populate
+        
+    Returns:
+        issue_obj: The same issue object (for chaining)
+    """
+    if issue_obj.cve_id:
+        from website.cache.cve_cache import normalize_cve_id
+
+        normalized = normalize_cve_id(issue_obj.cve_id) or issue_obj.cve_id
+        if normalized != issue_obj.cve_id:
+            issue_obj.cve_id = normalized
+        try:
+            issue_obj.cve_score = issue_obj.get_cve_score()
+        except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
+            issue_obj.cve_score = None
+    return issue_obj
+
+
 def cve_autocomplete(request):
     """
     API endpoint for CVE ID autocomplete suggestions.
@@ -425,6 +448,7 @@ def cve_autocomplete(request):
     query = request.GET.get("q", "").strip().upper()
 
     # Validate input: must be at least 3 characters and match CVE format start
+    # Effective minimum is 7 characters ("CVE-2024") due to CVE- prefix requirement
     if not query or len(query) < 3:
         return JsonResponse({"results": []})
 
@@ -437,12 +461,7 @@ def cve_autocomplete(request):
     # Normalize the query to match stored format
     from website.cache.cve_cache import normalize_cve_id
 
-    try:
-        normalized_query = normalize_cve_id(query)
-    except Exception:
-        # If normalization fails, return empty results
-        logger.warning("Error normalizing CVE ID in autocomplete: %s", query, exc_info=True)
-        return JsonResponse({"results": []})
+    normalized_query = normalize_cve_id(query)
 
     if not normalized_query:
         return JsonResponse({"results": []})
@@ -538,12 +557,7 @@ def search_issues(request, template="search.html"):
         # Use case-insensitive matching to handle both normalized and unnormalized data
         from website.cache.cve_cache import normalize_cve_id
 
-        try:
-            normalized_cve = normalize_cve_id(query)
-        except Exception:
-            # If normalization fails, log error and return empty results
-            logger.warning("Error normalizing CVE ID in search: %s", query, exc_info=True)
-            normalized_cve = None
+        normalized_cve = normalize_cve_id(query)
 
         if normalized_cve:
             if request.user.is_anonymous:
@@ -793,18 +807,8 @@ class IssueBaseCreate(object):
             )
 
         obj.user_agent = self.request.META.get("HTTP_USER_AGENT")
-        # Normalize CVE ID before saving
-        if obj.cve_id:
-            from website.cache.cve_cache import normalize_cve_id
-
-            obj.cve_id = normalize_cve_id(obj.cve_id) or obj.cve_id
-        # Populate cve_score if cve_id is provided
-        if obj.cve_id:
-            try:
-                obj.cve_score = obj.get_cve_score()
-            except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
-                # If CVE score fetch fails, continue without it
-                obj.cve_score = None
+        # Normalize CVE ID and populate score if available
+        normalize_and_populate_cve_score(obj)
         obj.save()
         Points.objects.create(user=self.request.user, issue=obj, score=score)
 
@@ -1371,21 +1375,12 @@ class IssueCreate(IssueBaseCreate, CreateView):
                 screenshot_text += "![0](" + screenshot.image.url + ") "
 
             obj.domain = domain
-            # Normalize CVE ID before saving
-            if obj.cve_id:
-                from website.cache.cve_cache import normalize_cve_id
-
-                obj.cve_id = normalize_cve_id(obj.cve_id) or obj.cve_id
-            # Populate cve_score if cve_id is provided
-            if obj.cve_id:
-                try:
-                    obj.cve_score = obj.get_cve_score()
-                except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
-                    # If CVE score fetch fails, continue without it
-                    obj.cve_score = None
-                    messages.warning(
-                        self.request, "Could not fetch CVE score at this time. Issue will be created without it."
-                    )
+            # Normalize CVE ID and populate score if available
+            normalize_and_populate_cve_score(obj)
+            if obj.cve_id and obj.cve_score is None:
+                messages.warning(
+                    self.request, "Could not fetch CVE score at this time. Issue will be created without it."
+                )
 
             obj.user_agent = self.request.META.get("HTTP_USER_AGENT")
             obj.save()
@@ -1854,18 +1849,8 @@ def submit_bug(request, pk, template="hunt_submittion.html"):
             # Read CVE ID from POST data
             cve_id = request.POST.get("cve_id", "").strip() or None
             issue.cve_id = cve_id
-            # Normalize CVE ID before saving
-            if issue.cve_id:
-                from website.cache.cve_cache import normalize_cve_id
-
-                issue.cve_id = normalize_cve_id(issue.cve_id) or issue.cve_id
-            # Populate cve_score if cve_id is provided
-            if issue.cve_id:
-                try:
-                    issue.cve_score = issue.get_cve_score()
-                except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
-                    # If CVE score fetch fails, continue without it
-                    issue.cve_score = None
+            # Normalize CVE ID and populate score if available
+            normalize_and_populate_cve_score(issue)
             issue.save()
             issue_list = Issue.objects.filter(user=request.user, hunt=hunt).exclude(
                 Q(is_hidden=True) & ~Q(user_id=request.user.id)

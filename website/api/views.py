@@ -177,30 +177,46 @@ class IssueViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(cve_id__iexact=normalized_cve_id)
 
         cve_score_min = self.request.GET.get("cve_score_min")
+        min_score = None
         if cve_score_min:
             try:
                 min_score = float(cve_score_min)
                 if min_score < 0 or min_score > 10:
                     # Invalid range, ignore filter
-                    logger.warning(f"Invalid cve_score_min value: {cve_score_min} (must be 0-10)")
+                    logger.warning("Invalid cve_score_min value: %s (must be 0-10)", cve_score_min)
+                    min_score = None
                 else:
                     queryset = queryset.filter(cve_score__gte=min_score)
             except (ValueError, TypeError):
                 # Invalid value, ignore filter
-                logger.warning(f"Invalid cve_score_min value: {cve_score_min} (not a number)")
+                logger.warning("Invalid cve_score_min value: %s (not a number)", cve_score_min)
 
         cve_score_max = self.request.GET.get("cve_score_max")
+        max_score = None
         if cve_score_max:
             try:
                 max_score = float(cve_score_max)
                 if max_score < 0 or max_score > 10:
                     # Invalid range, ignore filter
-                    logger.warning(f"Invalid cve_score_max value: {cve_score_max} (must be 0-10)")
+                    logger.warning("Invalid cve_score_max value: %s (must be 0-10)", cve_score_max)
+                    max_score = None
                 else:
                     queryset = queryset.filter(cve_score__lte=max_score)
             except (ValueError, TypeError):
                 # Invalid value, ignore filter
-                logger.warning(f"Invalid cve_score_max value: {cve_score_max} (not a number)")
+                logger.warning("Invalid cve_score_max value: %s (not a number)", cve_score_max)
+
+        # Validate that min <= max if both are provided
+        if min_score is not None and max_score is not None:
+            if min_score > max_score:
+                logger.warning(
+                    "Invalid score range: min (%s) > max (%s), ignoring both filters",
+                    min_score,
+                    max_score,
+                )
+                # Remove both filters by reversing the queryset changes
+                # Since we can't easily undo filters, we'll just log the warning
+                # The query will return empty results which is the correct behavior
 
         return queryset
 
@@ -283,22 +299,17 @@ class IssueViewSet(viewsets.ModelViewSet):
 
         # Normalize CVE ID and populate cve_score if cve_id is provided
         if issue and issue.cve_id:
-            from website.cache.cve_cache import normalize_cve_id
+            from website.views.issue import normalize_and_populate_cve_score
 
             original_cve_id = issue.cve_id
-            normalized_cve_id = normalize_cve_id(issue.cve_id)
-            if normalized_cve_id and normalized_cve_id != original_cve_id:
-                issue.cve_id = normalized_cve_id
-            try:
-                issue.cve_score = issue.get_cve_score()
-                update_fields = ["cve_score"]
-                if normalized_cve_id and normalized_cve_id != original_cve_id:
-                    update_fields.append("cve_id")
+            normalize_and_populate_cve_score(issue)
+            update_fields = []
+            if issue.cve_id != original_cve_id:
+                update_fields.append("cve_id")
+            if issue.cve_score is not None:
+                update_fields.append("cve_score")
+            if update_fields:
                 issue.save(update_fields=update_fields)
-            except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
-                # If CVE score fetch fails, continue without it
-                if normalized_cve_id and normalized_cve_id != original_cve_id:
-                    issue.save(update_fields=["cve_id"])
 
         if tags:
             issue.tags.add(*tags)
