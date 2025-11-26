@@ -79,7 +79,18 @@ def get_cached_cve_score(cve_id):
         cached_value, is_hit = _wait_for_cache_fill(cache_key, normalized_id)
         if is_hit:
             return cached_value
-        logger.debug("Cache fill wait timed out for %s, continuing", normalized_id)
+        logger.debug("Cache fill wait timed out for %s, retrying lock acquisition", normalized_id)
+        # Try to acquire lock one more time after timeout
+        lock_acquired = _acquire_cache_lock(lock_key)
+        if not lock_acquired:
+            # Still can't acquire lock - check cache one final time before proceeding
+            cached_value, is_hit = _read_from_cache(cache_key, normalized_id)
+            if is_hit:
+                return cached_value
+            logger.warning(
+                "Proceeding without lock for %s - multiple concurrent requests may cause duplicate API calls",
+                normalized_id,
+            )
 
     try:
         # Check cache again to avoid duplicate API calls after acquiring lock
