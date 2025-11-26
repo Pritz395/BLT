@@ -21,9 +21,7 @@ class TestIssueViewSetCveFiltering(TestCase):
     def setUp(self):
         """Set up test data."""
         self.api_client = APIClient()
-        self.test_user = User.objects.create_user(
-            username="testuser", email="test@example.com", password="testpass123"
-        )
+        self.test_user = User.objects.create_user(username="testuser", email="test@example.com", password="testpass123")
         self.test_domain = Domain.objects.create(url="https://example.com", name="example.com")
         # Issue with CVE ID and score
         self.issue1 = Issue.objects.create(
@@ -183,9 +181,7 @@ class TestWebSearchCve(TestCase):
     def setUp(self):
         """Set up test data."""
         self.web_client = Client()
-        self.test_user = User.objects.create_user(
-            username="testuser", email="test@example.com", password="testpass123"
-        )
+        self.test_user = User.objects.create_user(username="testuser", email="test@example.com", password="testpass123")
         self.test_domain = Domain.objects.create(url="https://example.com", name="example.com")
         # Issue with CVE ID and score
         self.issue1 = Issue.objects.create(
