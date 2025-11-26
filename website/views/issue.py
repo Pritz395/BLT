@@ -429,7 +429,7 @@ def cve_autocomplete(request):
         return JsonResponse({"results": []})
 
     # Validate CVE format: must start with "CVE-" followed by digits
-    if not query.startswith("CVE-") or len(query) < 7:  # Minimum: "CVE-2024"
+    if not query.startswith("CVE-") or len(query) < 8:  # Minimum: "CVE-2024"
         return JsonResponse({"results": []})
 
     # Search for CVE IDs that start with the query (case-insensitive)
@@ -523,7 +523,13 @@ def search_issues(request, template="search.html"):
         # Use case-insensitive matching to handle both normalized and unnormalized data
         from website.cache.cve_cache import normalize_cve_id
 
-        normalized_cve = normalize_cve_id(query)
+        try:
+            normalized_cve = normalize_cve_id(query)
+        except Exception:
+            # If normalization fails, log error and return empty results
+            logger.warning("Error normalizing CVE ID in search: %s", query, exc_info=True)
+            normalized_cve = None
+
         if normalized_cve:
             if request.user.is_anonymous:
                 issues = (
