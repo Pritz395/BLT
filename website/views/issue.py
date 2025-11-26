@@ -440,7 +440,7 @@ def normalize_and_populate_cve_score(issue_obj):
             # Only update if normalized value differs from original
             if normalized != issue_obj.cve_id:
                 issue_obj.cve_id = normalized
-            
+
             # Fetch CVE score from cache/API
             # Note: get_cve_score() handles all network/API exceptions internally
             # and returns None on any error, so no exception handling needed here
