@@ -420,10 +420,10 @@ def remove_user_from_issue(request, id):
 def normalize_and_populate_cve_score(issue_obj):
     """
     Normalize CVE ID and populate score if available.
-    
+
     Args:
         issue_obj: Issue instance to normalize and populate
-        
+
     Returns:
         issue_obj: The same issue object (for chaining)
     """
