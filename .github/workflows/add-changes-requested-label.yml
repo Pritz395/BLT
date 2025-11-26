@@ -150,5 +150,3 @@ jobs:
                 core.info(`No changes requested - label ${changesRequestedLabel} not present on PR #${pull_number}`);
               }
             }
-
-
