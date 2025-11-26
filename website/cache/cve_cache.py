@@ -273,7 +273,7 @@ def _acquire_cache_lock(lock_key):
 def _wait_for_cache_fill(cache_key, cve_id):
     """
     Wait briefly for another worker to populate the cache.
-    
+
     Returns immediately if cache is populated, otherwise waits up to
     CVE_CACHE_LOCK_WAIT_TIMEOUT seconds with short intervals to avoid
     blocking the worker thread for extended periods.
