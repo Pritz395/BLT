@@ -436,17 +436,31 @@ def cve_autocomplete(request):
     # Normalize the query to match stored format
     from website.cache.cve_cache import normalize_cve_id
 
-    normalized_query = normalize_cve_id(query)
+    try:
+        normalized_query = normalize_cve_id(query)
+    except Exception:
+        # If normalization fails, return empty results
+        logger.warning("Error normalizing CVE ID in autocomplete: %s", query, exc_info=True)
+        return JsonResponse({"results": []})
+
     if not normalized_query:
         return JsonResponse({"results": []})
+
+    # Apply visibility filters: exclude hunt issues and respect is_hidden rules
+    queryset = Issue.objects.filter(cve_id__istartswith=normalized_query, hunt=None)
+    queryset = queryset.exclude(cve_id__isnull=True).exclude(cve_id="")
+
+    # Apply is_hidden visibility rules (same as search_issues)
+    if request.user.is_anonymous:
+        queryset = queryset.exclude(Q(is_hidden=True))
+    else:
+        # Authenticated users can see their own hidden issues
+        queryset = queryset.exclude(Q(is_hidden=True) & ~Q(user_id=request.user.id))
 
     # Get distinct CVE IDs that match the query, ordered by most recent usage
     # Use subquery to get most recent issue for each CVE ID, then order by creation date
     cve_ids = (
-        Issue.objects.filter(cve_id__istartswith=normalized_query)
-        .exclude(cve_id__isnull=True)
-        .exclude(cve_id="")
-        .values("cve_id")
+        queryset.values("cve_id")
         .annotate(latest_created=Max("created"))
         .order_by("-latest_created", "cve_id")[:10]  # Most recent first, then alphabetical
         .values_list("cve_id", flat=True)
