@@ -149,9 +149,7 @@ class TestIssueViewSetCveFiltering:
         response = api_client.get(url, {"cve_score_max": "5.0"})
         assert response.status_code == status.HTTP_200_OK
         # Should include issue with score 3.2 and issues without CVE
-        scores = [
-            float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"] is not None
-        ]
+        scores = [float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"] is not None]
         assert all(score <= 5.0 for score in scores)
 
     def test_filter_by_cve_score_range(self, api_client, issues_with_cve):
@@ -284,4 +282,3 @@ class TestWebSearchCve:
         # Newer issue should appear first (ordered by -created)
         # JSON serialization returns pk as integer
         assert int(data["issues"][0]["pk"]) == newer_issue.id
-
