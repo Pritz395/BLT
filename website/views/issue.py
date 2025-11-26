@@ -1828,6 +1828,9 @@ def submit_bug(request, pk, template="hunt_submittion.html"):
                 )
                 return render(request, template, {"hunt": hunt, "issue_list": issue_list})
             issue.hunt = hunt
+            # Read CVE ID from POST data
+            cve_id = request.POST.get("cve_id", "").strip() or None
+            issue.cve_id = cve_id
             # Normalize CVE ID before saving
             if issue.cve_id:
                 from website.cache.cve_cache import normalize_cve_id
