@@ -182,7 +182,11 @@ class TestIssueViewSetCveFiltering:
         url = "/api/v1/issues/"
         response = api_client.get(url, {"cve_id": "CVE-2024-1234", "status": "open"})
         assert response.status_code == status.HTTP_200_OK
-        # Should only return issues matching both filters
+        # Verify that filters combine correctly
+        assert response.data["count"] > 0
+        for item in response.data["results"]:
+            assert item["cve_id"] == "CVE-2024-1234"
+            assert item["status"] == "open"
 
     def test_filter_combines_with_domain(self, api_client, issues_with_cve, test_domain):
         """Test that CVE filtering combines with domain filter."""
