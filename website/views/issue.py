@@ -430,19 +430,26 @@ def normalize_and_populate_cve_score(issue_obj):
     if issue_obj.cve_id:
         from website.cache.cve_cache import normalize_cve_id
 
-        normalized = normalize_cve_id(issue_obj.cve_id) or issue_obj.cve_id
-        if normalized != issue_obj.cve_id:
-            issue_obj.cve_id = normalized
-        try:
-            issue_obj.cve_score = issue_obj.get_cve_score()
-        except Exception as e:
-            logger.warning(
-                "Failed to fetch CVE score for %s: %s",
-                issue_obj.cve_id,
-                e,
-                exc_info=True,
-            )
+        normalized = normalize_cve_id(issue_obj.cve_id)
+        # If normalization returns empty string (invalid/whitespace-only input),
+        # set cve_id to None to prevent storing invalid data
+        if not normalized:
+            issue_obj.cve_id = None
             issue_obj.cve_score = None
+        else:
+            # Only update if normalized value differs from original
+            if normalized != issue_obj.cve_id:
+                issue_obj.cve_id = normalized
+            try:
+                issue_obj.cve_score = issue_obj.get_cve_score()
+            except Exception as e:
+                logger.warning(
+                    "Failed to fetch CVE score for %s: %s",
+                    issue_obj.cve_id,
+                    e,
+                    exc_info=True,
+                )
+                issue_obj.cve_score = None
     return issue_obj
 
 
