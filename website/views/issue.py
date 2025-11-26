@@ -1380,7 +1380,7 @@ class IssueCreate(IssueBaseCreate, CreateView):
             if obj.cve_id:
                 try:
                     obj.cve_score = obj.get_cve_score()
-                except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException) as e:
+                except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
                     # If CVE score fetch fails, continue without it
                     obj.cve_score = None
                     messages.warning(
