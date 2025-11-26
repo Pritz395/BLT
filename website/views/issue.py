@@ -1235,7 +1235,7 @@ class IssueCreate(IssueBaseCreate, CreateView):
                                         return HttpResponseRedirect("/")
 
                                     if os.path.exists(orig_path):
-                                        dest_path = os.path.join(temp_dir, f"screenshot_{idx + 1}.png")
+                                        dest_path = os.path.join(temp_dir, f"screenshot_{idx+1}.png")
                                         import shutil
 
                                         shutil.copy(orig_path, dest_path)
