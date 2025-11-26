@@ -165,6 +165,43 @@ class IssueViewSet(viewsets.ModelViewSet):
         if domain_url:
             queryset = queryset.filter(domain__url=domain_url)
 
+        cve_id = self.request.GET.get("cve_id")
+        if cve_id:
+            # Normalize CVE ID to match stored format (uppercase, trimmed)
+            # Use case-insensitive matching to handle both normalized and unnormalized data
+            from website.cache.cve_cache import normalize_cve_id
+
+            normalized_cve_id = normalize_cve_id(cve_id)
+            if normalized_cve_id:
+                # Use case-insensitive matching to handle existing unnormalized data
+                queryset = queryset.filter(cve_id__iexact=normalized_cve_id)
+
+        cve_score_min = self.request.GET.get("cve_score_min")
+        if cve_score_min:
+            try:
+                min_score = float(cve_score_min)
+                if min_score < 0 or min_score > 10:
+                    # Invalid range, ignore filter
+                    logger.warning(f"Invalid cve_score_min value: {cve_score_min} (must be 0-10)")
+                else:
+                    queryset = queryset.filter(cve_score__gte=min_score)
+            except (ValueError, TypeError):
+                # Invalid value, ignore filter
+                logger.warning(f"Invalid cve_score_min value: {cve_score_min} (not a number)")
+
+        cve_score_max = self.request.GET.get("cve_score_max")
+        if cve_score_max:
+            try:
+                max_score = float(cve_score_max)
+                if max_score < 0 or max_score > 10:
+                    # Invalid range, ignore filter
+                    logger.warning(f"Invalid cve_score_max value: {cve_score_max} (must be 0-10)")
+                else:
+                    queryset = queryset.filter(cve_score__lte=max_score)
+            except (ValueError, TypeError):
+                # Invalid value, ignore filter
+                logger.warning(f"Invalid cve_score_max value: {cve_score_max} (not a number)")
+
         return queryset
 
     def get_issue_info(self, request, issue):
@@ -243,6 +280,25 @@ class IssueViewSet(viewsets.ModelViewSet):
 
         data = super().create(request, *args, **kwargs).data
         issue = Issue.objects.filter(id=data["id"]).first()
+
+        # Normalize CVE ID and populate cve_score if cve_id is provided
+        if issue and issue.cve_id:
+            from website.cache.cve_cache import normalize_cve_id
+
+            original_cve_id = issue.cve_id
+            normalized_cve_id = normalize_cve_id(issue.cve_id)
+            if normalized_cve_id and normalized_cve_id != original_cve_id:
+                issue.cve_id = normalized_cve_id
+            try:
+                issue.cve_score = issue.get_cve_score()
+                update_fields = ["cve_score"]
+                if normalized_cve_id and normalized_cve_id != original_cve_id:
+                    update_fields.append("cve_id")
+                issue.save(update_fields=update_fields)
+            except (requests.exceptions.JSONDecodeError, requests.exceptions.RequestException):
+                # If CVE score fetch fails, continue without it
+                if normalized_cve_id and normalized_cve_id != original_cve_id:
+                    issue.save(update_fields=["cve_id"])
 
         if tags:
             issue.tags.add(*tags)
