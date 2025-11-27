@@ -456,12 +456,12 @@ def cve_autocomplete(request):
     query = request.GET.get("q", "").strip().upper()
 
     # Validate input: must be at least 3 characters and match CVE format start
-    # Effective minimum is 7 characters ("CVE-2024") due to CVE- prefix requirement
+    # The endpoint allows queries of 3+ characters and permits partial CVE inputs
+    # like "CVE-" or "CVE-2024-" for incremental autocomplete
     if not query or len(query) < 3:
         return JsonResponse({"results": []})
 
     # Validate CVE format: must start with "CVE-"
-    # Allow shorter queries (3+ chars) for incremental autocomplete
     if not query.startswith("CVE-"):
         return JsonResponse({"results": []})
 

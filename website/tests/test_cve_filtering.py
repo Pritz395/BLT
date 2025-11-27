@@ -314,3 +314,348 @@ class TestWebSearchCve(TestCase):
         # Newer issue should appear first (ordered by -created)
         # JSON serialization returns pk as integer
         self.assertEqual(int(data["issues"][0]["pk"]), newer_issue.id)
+
+
+class TestCveAutocomplete(TestCase):
+    """Test CVE autocomplete endpoint functionality."""
+
+    def setUp(self):
+        """Set up test data."""
+        self.web_client = Client()
+        self.test_user = User.objects.create_user(username="testuser", email="test@example.com", password="testpass123")
+        self.other_user = User.objects.create_user(username="otheruser", email="other@example.com", password="testpass123")
+        self.test_domain = Domain.objects.create(url="https://example.com", name="example.com")
+        # Create issues with different CVE IDs for testing
+        self.issue1 = Issue.objects.create(
+            url="https://example.com/vuln1",
+            description="Issue 1",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        self.issue2 = Issue.objects.create(
+            url="https://example.com/vuln2",
+            description="Issue 2",
+            cve_id="CVE-2024-5678",
+            cve_score=Decimal("8.5"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        self.issue3 = Issue.objects.create(
+            url="https://example.com/vuln3",
+            description="Issue 3",
+            cve_id="CVE-2024-9999",
+            cve_score=Decimal("3.2"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        self.issue4 = Issue.objects.create(
+            url="https://example.com/vuln4",
+            description="Issue 4",
+            cve_id="CVE-2023-1111",
+            cve_score=Decimal("7.0"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+
+    def test_autocomplete_partial_query_cve_prefix(self):
+        """Test autocomplete with partial query 'CVE-'."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("results", data)
+        # Should return all CVE IDs starting with "CVE-"
+        cve_ids = [item["id"] for item in data["results"]]
+        self.assertGreaterEqual(len(cve_ids), 4)
+        self.assertIn("CVE-2024-1234", cve_ids)
+        self.assertIn("CVE-2024-5678", cve_ids)
+        self.assertIn("CVE-2024-9999", cve_ids)
+        self.assertIn("CVE-2023-1111", cve_ids)
+
+    def test_autocomplete_partial_query_year(self):
+        """Test autocomplete with partial query 'CVE-2024-'."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("results", data)
+        cve_ids = [item["id"] for item in data["results"]]
+        # Should return only 2024 CVE IDs
+        self.assertGreaterEqual(len(cve_ids), 3)
+        self.assertIn("CVE-2024-1234", cve_ids)
+        self.assertIn("CVE-2024-5678", cve_ids)
+        self.assertIn("CVE-2024-9999", cve_ids)
+        self.assertNotIn("CVE-2023-1111", cve_ids)
+
+    def test_autocomplete_partial_query_specific_cve(self):
+        """Test autocomplete with partial query matching specific CVE."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-12"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("results", data)
+        cve_ids = [item["id"] for item in data["results"]]
+        self.assertIn("CVE-2024-1234", cve_ids)
+
+    def test_autocomplete_query_too_short(self):
+        """Test that queries shorter than 3 characters return empty results."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CV"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["results"], [])
+
+    def test_autocomplete_query_not_cve_prefix(self):
+        """Test that queries not starting with 'CVE-' return empty results."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "INVALID"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["results"], [])
+
+    def test_autocomplete_excludes_hunt_issues(self):
+        """Test that hunt issues are excluded from autocomplete results."""
+        from website.models import Hunt
+
+        # Create a hunt (Hunt model requires domain, name, url, and plan)
+        hunt = Hunt.objects.create(
+            name="Test Hunt",
+            domain=self.test_domain,
+            url="https://example.com/hunt",
+            plan="basic",
+        )
+        # Create an issue with CVE ID that belongs to a hunt
+        hunt_issue = Issue.objects.create(
+            url="https://example.com/hunt-vuln",
+            description="Hunt issue",
+            cve_id="CVE-2024-HUNT",
+            cve_score=Decimal("9.0"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+            hunt=hunt,
+        )
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # Hunt issue CVE should not appear in results
+        self.assertNotIn("CVE-2024-HUNT", cve_ids)
+
+    def test_autocomplete_excludes_hidden_issues_for_anonymous(self):
+        """Test that anonymous users cannot see hidden issues in autocomplete."""
+        # Create a hidden issue with CVE
+        hidden_issue = Issue.objects.create(
+            url="https://example.com/hidden",
+            description="Hidden issue",
+            cve_id="CVE-2024-HIDDEN",
+            cve_score=Decimal("8.0"),
+            domain=self.test_domain,
+            user=self.other_user,
+            is_hidden=True,
+        )
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # Hidden issue CVE should not appear for anonymous users
+        self.assertNotIn("CVE-2024-HIDDEN", cve_ids)
+
+    def test_autocomplete_authenticated_user_sees_own_hidden_issues(self):
+        """Test that authenticated users can see their own hidden issues in autocomplete."""
+        # Create a hidden issue owned by test_user
+        hidden_issue = Issue.objects.create(
+            url="https://example.com/my-hidden",
+            description="My hidden issue",
+            cve_id="CVE-2024-MYHIDDEN",
+            cve_score=Decimal("7.5"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=True,
+        )
+        # Login as test_user
+        self.web_client.force_login(self.test_user)
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # User should see their own hidden issue
+        self.assertIn("CVE-2024-MYHIDDEN", cve_ids)
+
+    def test_autocomplete_authenticated_user_excludes_others_hidden_issues(self):
+        """Test that authenticated users cannot see other users' hidden issues."""
+        # Create a hidden issue owned by other_user
+        hidden_issue = Issue.objects.create(
+            url="https://example.com/other-hidden",
+            description="Other user's hidden issue",
+            cve_id="CVE-2024-OTHERHIDDEN",
+            cve_score=Decimal("6.5"),
+            domain=self.test_domain,
+            user=self.other_user,
+            is_hidden=True,
+        )
+        # Login as test_user
+        self.web_client.force_login(self.test_user)
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # User should not see other user's hidden issue
+        self.assertNotIn("CVE-2024-OTHERHIDDEN", cve_ids)
+
+    def test_autocomplete_orders_by_latest_created(self):
+        """Test that autocomplete results are ordered by most recent usage (latest_created)."""
+        # Create multiple issues with the same CVE ID at different times
+        # First issue with CVE-2024-1234 (older)
+        older_issue = Issue.objects.create(
+            url="https://example.com/older",
+            description="Older issue",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        # Update created timestamp to be older (if possible)
+        # Note: We'll create a newer issue with same CVE to test ordering
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Create a newer issue with same CVE ID
+        newer_issue = Issue.objects.create(
+            url="https://example.com/newer",
+            description="Newer issue",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        # Create another CVE ID that was used more recently
+        recent_issue = Issue.objects.create(
+            url="https://example.com/recent",
+            description="Recent issue",
+            cve_id="CVE-2024-RECENT",
+            cve_score=Decimal("8.0"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # CVE-2024-RECENT should appear first (most recent)
+        # CVE-2024-1234 should appear after (has older issue)
+        self.assertIn("CVE-2024-RECENT", cve_ids)
+        self.assertIn("CVE-2024-1234", cve_ids)
+        # Most recent CVE should be first
+        if len(cve_ids) > 0:
+            # The first result should be the most recently used CVE
+            self.assertEqual(cve_ids[0], "CVE-2024-RECENT")
+
+    def test_autocomplete_deduplicates_cve_ids(self):
+        """Test that autocomplete returns distinct CVE IDs (no duplicates)."""
+        # Create multiple issues with the same CVE ID
+        Issue.objects.create(
+            url="https://example.com/dup1",
+            description="Duplicate 1",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        Issue.objects.create(
+            url="https://example.com/dup2",
+            description="Duplicate 2",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        Issue.objects.create(
+            url="https://example.com/dup3",
+            description="Duplicate 3",
+            cve_id="CVE-2024-1234",
+            cve_score=Decimal("9.8"),
+            domain=self.test_domain,
+            user=self.test_user,
+            is_hidden=False,
+        )
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-1234"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # Should only return one instance of CVE-2024-1234
+        self.assertEqual(cve_ids.count("CVE-2024-1234"), 1)
+
+    def test_autocomplete_returns_max_10_results(self):
+        """Test that autocomplete returns at most 10 distinct CVE IDs."""
+        # Create 15 issues with different CVE IDs
+        for i in range(15):
+            Issue.objects.create(
+                url=f"https://example.com/vuln{i}",
+                description=f"Issue {i}",
+                cve_id=f"CVE-2024-{i:04d}",
+                cve_score=Decimal("7.0"),
+                domain=self.test_domain,
+                user=self.test_user,
+                is_hidden=False,
+            )
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids = [item["id"] for item in data["results"]]
+        # Should return at most 10 results
+        self.assertLessEqual(len(cve_ids), 10)
+        # All results should be distinct
+        self.assertEqual(len(cve_ids), len(set(cve_ids)))
+
+    def test_autocomplete_case_insensitive(self):
+        """Test that autocomplete is case-insensitive."""
+        url = reverse("cve_autocomplete")
+        # Test lowercase query
+        response = self.web_client.get(url, {"q": "cve-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids_lower = [item["id"] for item in data["results"]]
+        # Test uppercase query
+        response = self.web_client.get(url, {"q": "CVE-2024-"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        cve_ids_upper = [item["id"] for item in data["results"]]
+        # Results should be the same
+        self.assertEqual(set(cve_ids_lower), set(cve_ids_upper))
+
+    def test_autocomplete_empty_query(self):
+        """Test that empty query returns empty results."""
+        url = reverse("cve_autocomplete")
+        response = self.web_client.get(url, {"q": ""})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["results"], [])
+
+    def test_autocomplete_whitespace_handling(self):
+        """Test that whitespace in query is handled correctly."""
+        url = reverse("cve_autocomplete")
+        # Query with leading/trailing whitespace
+        response = self.web_client.get(url, {"q": "  CVE-2024-  "})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        # Should still return results (whitespace is stripped)
+        self.assertIn("results", data)
