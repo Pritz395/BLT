@@ -323,7 +323,9 @@ class TestCveAutocomplete(TestCase):
         """Set up test data."""
         self.web_client = Client()
         self.test_user = User.objects.create_user(username="testuser", email="test@example.com", password="testpass123")
-        self.other_user = User.objects.create_user(username="otheruser", email="other@example.com", password="testpass123")
+        self.other_user = User.objects.create_user(
+            username="otheruser", email="other@example.com", password="testpass123"
+        )
         self.test_domain = Domain.objects.create(url="https://example.com", name="example.com")
         # Create issues with different CVE IDs for testing
         self.issue1 = Issue.objects.create(
@@ -528,8 +530,6 @@ class TestCveAutocomplete(TestCase):
         )
         # Update created timestamp to be older (if possible)
         # Note: We'll create a newer issue with same CVE to test ordering
-        from django.utils import timezone
-        from datetime import timedelta
 
         # Create a newer issue with same CVE ID
         newer_issue = Issue.objects.create(
