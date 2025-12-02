@@ -191,7 +191,7 @@ class BaconSubmissionView(View):
 
                             # Build the message
                             message = (
-                                f"🥓 *New BACON Claim Submitted!*\n\n"
+                                f"*New BACON Claim Submitted!*\n\n"
                                 f"• *User:* {request.user.username}\n"
                                 f"• *Type:* {contribution_type}\n"
                                 f"• *PR:* {github_url}\n"
