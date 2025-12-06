@@ -31,7 +31,7 @@ from google.cloud import storage
 from mdeditor.fields import MDTextField
 from rest_framework.authtoken.models import Token
 
-from website.cache.cve_cache import CVE_ID_PATTERN, get_cached_cve_score
+from website.cache.cve_cache import CVE_ID_PATTERN, get_cached_cve_score, normalize_cve_id
 
 logger = logging.getLogger(__name__)
 
@@ -680,13 +680,17 @@ class Issue(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Override save() to ensure CVE ID validation runs on every save.
-        Calls full_clean() which invokes clean() to validate CVE ID format.
+        Override save() to validate and normalize CVE ID on every save.
+        Only validates CVE-specific fields, not all model fields.
         """
-        # Call full_clean() to run all validations including clean()
-        # exclude=None means validate all fields, validate_unique=False to avoid
-        # duplicate key errors during updates
-        self.full_clean(exclude=None, validate_unique=False)
+        # Validate and normalize CVE ID if present
+        if self.cve_id:
+            normalized = normalize_cve_id(self.cve_id)
+            if not normalized:
+                # normalize_cve_id returns empty string for invalid CVE IDs
+                raise ValidationError(f"Invalid CVE ID format: {self.cve_id}")
+            # Update to normalized form (uppercase, trimmed)
+            self.cve_id = normalized
         
         # Call parent save() to persist the instance
         super().save(*args, **kwargs)
@@ -3523,3 +3527,4 @@ class StakingTransaction(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.get_transaction_type_display()} - {self.amount} BACON"
+
