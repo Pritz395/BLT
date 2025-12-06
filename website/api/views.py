@@ -304,20 +304,32 @@ class IssueViewSet(viewsets.ModelViewSet):
         # Fetch the created issue and normalize CVE data if present
         # Use select_for_update within transaction to prevent race conditions during CVE processing
         with transaction.atomic():
-            issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
+            try:
+                issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
 
-            if issue and issue.cve_id:
-                from website.views.issue import normalize_and_populate_cve_score
+                if issue and issue.cve_id:
+                    from website.views.issue import normalize_and_populate_cve_score
 
-                original_cve_id = issue.cve_id
-                normalize_and_populate_cve_score(issue)
-                update_fields = []
-                if issue.cve_id != original_cve_id:
-                    update_fields.append("cve_id")
-                if issue.cve_score is not None:
-                    update_fields.append("cve_score")
-                if update_fields:
-                    issue.save(update_fields=update_fields)
+                    try:
+                        original_cve_id = issue.cve_id
+                        normalize_and_populate_cve_score(issue)
+                        update_fields = []
+                        if issue.cve_id != original_cve_id:
+                            update_fields.append("cve_id")
+                        if issue.cve_score is not None:
+                            update_fields.append("cve_score")
+                        if update_fields:
+                            issue.save(update_fields=update_fields)
+                    except Exception as e:
+                        # Log the error but don't break the transaction
+                        # The issue will still be created even if CVE processing fails
+                        logger.warning(f"Failed to normalize/populate CVE score for issue {issue.id}: {e}")
+            except Issue.DoesNotExist:
+                logger.error(f"Issue {data.get('id')} not found after creation")
+                # Continue without CVE processing - issue creation already succeeded
+            except Exception as e:
+                logger.error(f"Unexpected error during CVE processing: {e}")
+                # Continue without CVE processing - issue creation already succeeded
 
         # Continue with tags and screenshots outside of the CVE transaction
         if not issue:
