@@ -31,7 +31,7 @@ from google.cloud import storage
 from mdeditor.fields import MDTextField
 from rest_framework.authtoken.models import Token
 
-from website.cache.cve_cache import CVE_ID_PATTERN, get_cached_cve_score, normalize_cve_id
+from website.cache.cve_cache import get_cached_cve_score, normalize_cve_id
 
 logger = logging.getLogger(__name__)
 
@@ -694,7 +694,7 @@ class Issue(models.Model):
                 raise ValidationError(f"Invalid CVE ID format: {self.cve_id}")
             # Update to normalized form (uppercase, trimmed)
             self.cve_id = normalized
-        
+
         # Call parent save() to persist the instance
         super().save(*args, **kwargs)
 
@@ -3538,4 +3538,3 @@ class StakingTransaction(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.get_transaction_type_display()} - {self.amount} BACON"
-
