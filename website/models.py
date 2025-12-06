@@ -675,7 +675,10 @@ class Issue(models.Model):
         """Validate model fields."""
         super().clean()
         if self.cve_id:
-            if not CVE_ID_PATTERN.match(self.cve_id):
+            # Use normalize_cve_id() for consistent validation
+            normalized = normalize_cve_id(self.cve_id)
+            if not normalized:
+                # normalize_cve_id returns empty string for invalid CVE IDs
                 raise ValidationError(f"Invalid CVE ID format: {self.cve_id}")
 
     def save(self, *args, **kwargs):
@@ -696,9 +699,17 @@ class Issue(models.Model):
         super().save(*args, **kwargs)
 
     def get_cve_score(self):
-        if self.cve_id is None:
+        """
+        Get CVE score from cache/API.
+        Returns None for empty, None, or invalid CVE IDs.
+        """
+        if not self.cve_id:
             return None
-        return get_cached_cve_score(self.cve_id)
+        # normalize_cve_id handles empty strings and invalid formats
+        normalized = normalize_cve_id(self.cve_id)
+        if not normalized:
+            return None
+        return get_cached_cve_score(normalized)
 
     def get_cve_severity(self):
         """
