@@ -151,10 +151,13 @@ class TestIssueViewSetCveFiltering(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # Should return all issues (both filters ignored due to invalid range)
         self.assertGreaterEqual(response.data["count"], 4)
+        # Explicitly assert that results are non-empty
+        self.assertGreater(len(response.data["results"]), 0, "Response should contain results when invalid range is ignored")
         # Verify that issues with scores outside the invalid range are still returned
         scores = [float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"]]
         # Should include issues with scores > 5.0 (like 9.8) since filters were ignored
-        self.assertTrue(any(score > 5.0 for score in scores) or len(scores) == 0)
+        self.assertGreater(len(scores), 0, "Should have at least one issue with CVE score")
+        self.assertTrue(any(score > 5.0 for score in scores), "Should include issues with scores > 5.0 when invalid range is ignored")
 
     def test_filter_combines_with_status(self):
         """Test that CVE filtering combines with other filters."""
@@ -556,14 +559,14 @@ class TestCveAutocomplete(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
+        # Explicitly assert that results are non-empty
+        self.assertGreater(len(cve_ids), 0, "Autocomplete should return results for CVE-2024- prefix")
         # CVE-2024-1005 should appear first (most recent)
         # CVE-2024-1234 should appear after (has older issue)
         self.assertIn("CVE-2024-1005", cve_ids)
         self.assertIn("CVE-2024-1234", cve_ids)
         # Most recent CVE should be first
-        if len(cve_ids) > 0:
-            # The first result should be the most recently used CVE
-            self.assertEqual(cve_ids[0], "CVE-2024-1005")
+        self.assertEqual(cve_ids[0], "CVE-2024-1005", "Most recently used CVE should appear first")
 
     def test_autocomplete_deduplicates_cve_ids(self):
         """Test that autocomplete returns distinct CVE IDs (no duplicates)."""
