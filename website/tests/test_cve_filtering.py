@@ -436,7 +436,7 @@ class TestCveAutocomplete(TestCase):
         hunt_issue = Issue.objects.create(
             url="https://example.com/hunt-vuln",
             description="Hunt issue",
-            cve_id="CVE-2024-HUNT",
+            cve_id="CVE-2024-1001",
             cve_score=Decimal("9.0"),
             domain=self.test_domain,
             user=self.test_user,
@@ -449,7 +449,7 @@ class TestCveAutocomplete(TestCase):
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
         # Hunt issue CVE should not appear in results
-        self.assertNotIn("CVE-2024-HUNT", cve_ids)
+        self.assertNotIn("CVE-2024-1001", cve_ids)
 
     def test_autocomplete_excludes_hidden_issues_for_anonymous(self):
         """Test that anonymous users cannot see hidden issues in autocomplete."""
@@ -457,7 +457,7 @@ class TestCveAutocomplete(TestCase):
         hidden_issue = Issue.objects.create(
             url="https://example.com/hidden",
             description="Hidden issue",
-            cve_id="CVE-2024-HIDDEN",
+            cve_id="CVE-2024-1002",
             cve_score=Decimal("8.0"),
             domain=self.test_domain,
             user=self.other_user,
@@ -469,7 +469,7 @@ class TestCveAutocomplete(TestCase):
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
         # Hidden issue CVE should not appear for anonymous users
-        self.assertNotIn("CVE-2024-HIDDEN", cve_ids)
+        self.assertNotIn("CVE-2024-1002", cve_ids)
 
     def test_autocomplete_authenticated_user_sees_own_hidden_issues(self):
         """Test that authenticated users can see their own hidden issues in autocomplete."""
@@ -477,7 +477,7 @@ class TestCveAutocomplete(TestCase):
         hidden_issue = Issue.objects.create(
             url="https://example.com/my-hidden",
             description="My hidden issue",
-            cve_id="CVE-2024-MYHIDDEN",
+            cve_id="CVE-2024-1003",
             cve_score=Decimal("7.5"),
             domain=self.test_domain,
             user=self.test_user,
@@ -491,7 +491,7 @@ class TestCveAutocomplete(TestCase):
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
         # User should see their own hidden issue
-        self.assertIn("CVE-2024-MYHIDDEN", cve_ids)
+        self.assertIn("CVE-2024-1003", cve_ids)
 
     def test_autocomplete_authenticated_user_excludes_others_hidden_issues(self):
         """Test that authenticated users cannot see other users' hidden issues."""
@@ -499,7 +499,7 @@ class TestCveAutocomplete(TestCase):
         hidden_issue = Issue.objects.create(
             url="https://example.com/other-hidden",
             description="Other user's hidden issue",
-            cve_id="CVE-2024-OTHERHIDDEN",
+            cve_id="CVE-2024-1004",
             cve_score=Decimal("6.5"),
             domain=self.test_domain,
             user=self.other_user,
@@ -513,7 +513,7 @@ class TestCveAutocomplete(TestCase):
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
         # User should not see other user's hidden issue
-        self.assertNotIn("CVE-2024-OTHERHIDDEN", cve_ids)
+        self.assertNotIn("CVE-2024-1004", cve_ids)
 
     def test_autocomplete_orders_by_latest_created(self):
         """Test that autocomplete results are ordered by most recent usage (latest_created)."""
@@ -545,7 +545,7 @@ class TestCveAutocomplete(TestCase):
         recent_issue = Issue.objects.create(
             url="https://example.com/recent",
             description="Recent issue",
-            cve_id="CVE-2024-RECENT",
+            cve_id="CVE-2024-1005",
             cve_score=Decimal("8.0"),
             domain=self.test_domain,
             user=self.test_user,
@@ -556,14 +556,14 @@ class TestCveAutocomplete(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         cve_ids = [item["id"] for item in data["results"]]
-        # CVE-2024-RECENT should appear first (most recent)
+        # CVE-2024-1005 should appear first (most recent)
         # CVE-2024-1234 should appear after (has older issue)
-        self.assertIn("CVE-2024-RECENT", cve_ids)
+        self.assertIn("CVE-2024-1005", cve_ids)
         self.assertIn("CVE-2024-1234", cve_ids)
         # Most recent CVE should be first
         if len(cve_ids) > 0:
             # The first result should be the most recently used CVE
-            self.assertEqual(cve_ids[0], "CVE-2024-RECENT")
+            self.assertEqual(cve_ids[0], "CVE-2024-1005")
 
     def test_autocomplete_deduplicates_cve_ids(self):
         """Test that autocomplete returns distinct CVE IDs (no duplicates)."""
