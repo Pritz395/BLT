@@ -114,9 +114,16 @@ class TestIssueViewSetCveFiltering(TestCase):
         url = "/api/v1/issues/"
         response = self.api_client.get(url, {"cve_score_max": "5.0"})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Explicitly assert that results are non-empty
+        self.assertGreater(
+            len(response.data["results"]), 0, "Response should contain results when filtering by max CVE score"
+        )
         # Should include issue with score 3.2 and issues without CVE
         scores = [float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"] is not None]
-        self.assertTrue(all(score <= 5.0 for score in scores))
+        # Assert that all non-null scores are <= 5.0
+        self.assertTrue(
+            all(score <= 5.0 for score in scores), "All CVE scores should be <= 5.0 when filtering by max score"
+        )
 
     def test_filter_by_cve_score_range(self):
         """Test filtering issues by CVE score range."""
@@ -152,12 +159,17 @@ class TestIssueViewSetCveFiltering(TestCase):
         # Should return all issues (both filters ignored due to invalid range)
         self.assertGreaterEqual(response.data["count"], 4)
         # Explicitly assert that results are non-empty
-        self.assertGreater(len(response.data["results"]), 0, "Response should contain results when invalid range is ignored")
+        self.assertGreater(
+            len(response.data["results"]), 0, "Response should contain results when invalid range is ignored"
+        )
         # Verify that issues with scores outside the invalid range are still returned
         scores = [float(issue["cve_score"]) for issue in response.data["results"] if issue["cve_score"]]
         # Should include issues with scores > 5.0 (like 9.8) since filters were ignored
         self.assertGreater(len(scores), 0, "Should have at least one issue with CVE score")
-        self.assertTrue(any(score > 5.0 for score in scores), "Should include issues with scores > 5.0 when invalid range is ignored")
+        self.assertTrue(
+            any(score > 5.0 for score in scores),
+            "Should include issues with scores > 5.0 when invalid range is ignored",
+        )
 
     def test_filter_combines_with_status(self):
         """Test that CVE filtering combines with other filters."""
