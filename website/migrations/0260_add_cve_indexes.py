@@ -6,7 +6,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("website", "0256_inviteorganization"),
+        ("website", "0259_add_search_history"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
