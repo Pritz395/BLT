@@ -303,6 +303,7 @@ class IssueViewSet(viewsets.ModelViewSet):
 
         # Fetch the created issue and normalize CVE data if present
         # Use select_for_update within transaction to prevent race conditions during CVE processing
+        issue = None
         with transaction.atomic():
             try:
                 issue = Issue.objects.select_for_update().filter(id=data["id"]).first()
@@ -323,16 +324,15 @@ class IssueViewSet(viewsets.ModelViewSet):
                     except Exception as e:
                         # Log the error but don't break the transaction
                         # The issue will still be created even if CVE processing fails
-                        logger.warning(f"Failed to normalize/populate CVE score for issue {issue.id}: {e}")
-            except Issue.DoesNotExist:
-                logger.error(f"Issue {data.get('id')} not found after creation")
-                # Continue without CVE processing - issue creation already succeeded
+                        logger.exception(
+                            f"Failed to normalize/populate CVE score for issue {issue.id if issue else 'unknown'}: {e}"
+                        )
             except Exception as e:
-                logger.error(f"Unexpected error during CVE processing: {e}")
+                logger.exception(f"Unexpected error during CVE processing: {e}")
                 # Continue without CVE processing - issue creation already succeeded
 
         # Continue with tags and screenshots outside of the CVE transaction
-        if not issue:
+        if issue is None:
             issue = Issue.objects.filter(id=data["id"]).first()
 
         if tags and issue:

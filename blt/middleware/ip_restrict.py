@@ -151,12 +151,12 @@ class IPRestrictMiddleware:
             return
 
         try:
-            # Check if we're in a broken transaction before entering atomic block
-            if transaction.get_rollback():
-                logger.warning(f"Skipping IP recording for {ip} - transaction marked for rollback")
-                return
-
             with transaction.atomic():
+                # Check if we're in a broken transaction
+                if transaction.get_rollback():
+                    logger.warning(f"Skipping IP recording for {ip} - transaction marked for rollback")
+                    return
+
                 # Try to update existing record using atomic QuerySet.update() with F()
                 updated = IP.objects.filter(address=ip, path=path).update(
                     agent=agent,
