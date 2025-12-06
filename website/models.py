@@ -31,7 +31,7 @@ from google.cloud import storage
 from mdeditor.fields import MDTextField
 from rest_framework.authtoken.models import Token
 
-from website.cache.cve_cache import get_cached_cve_score
+from website.cache.cve_cache import CVE_ID_PATTERN, get_cached_cve_score
 
 logger = logging.getLogger(__name__)
 
@@ -675,10 +675,21 @@ class Issue(models.Model):
         """Validate model fields."""
         super().clean()
         if self.cve_id:
-            from website.cache.cve_cache import CVE_ID_PATTERN
-
             if not CVE_ID_PATTERN.match(self.cve_id):
                 raise ValidationError(f"Invalid CVE ID format: {self.cve_id}")
+
+    def save(self, *args, **kwargs):
+        """
+        Override save() to ensure CVE ID validation runs on every save.
+        Calls full_clean() which invokes clean() to validate CVE ID format.
+        """
+        # Call full_clean() to run all validations including clean()
+        # exclude=None means validate all fields, validate_unique=False to avoid
+        # duplicate key errors during updates
+        self.full_clean(exclude=None, validate_unique=False)
+        
+        # Call parent save() to persist the instance
+        super().save(*args, **kwargs)
 
     def get_cve_score(self):
         if self.cve_id is None:
