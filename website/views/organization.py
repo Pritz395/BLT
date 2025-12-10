@@ -1417,7 +1417,7 @@ def sizzle_daily_log(request):
                     # Get details of completed challenges
                     from datetime import date
 
-                    from website.models import Points, UserDailyChallenge
+                    from website.models import UserDailyChallenge
 
                     user_challenges = UserDailyChallenge.objects.filter(
                         user=request.user,
@@ -2222,7 +2222,7 @@ def truncate_text(text, length=15):
 @login_required
 def add_sizzle_checkIN(request):
     try:
-        from datetime import date, timedelta
+        from datetime import timedelta
 
         from website.models import DailyStatusReport, UserDailyChallenge
         from website.services.daily_challenge_service import DailyChallengeService
