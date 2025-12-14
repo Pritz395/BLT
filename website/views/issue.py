@@ -21,6 +21,7 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.core import serializers
+from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -428,16 +429,26 @@ def normalize_and_populate_cve_score(issue_obj):
 
     Returns:
         issue_obj: The same issue object (for chaining)
+
+    Raises:
+        ValidationError: If CVE ID format is invalid (non-empty but invalid format)
     """
     if issue_obj.cve_id:
         from website.cache.cve_cache import normalize_cve_id
 
+        original_cve_id = issue_obj.cve_id.strip() if issue_obj.cve_id else ""
         normalized = normalize_cve_id(issue_obj.cve_id)
+        
         # If normalization returns empty string (invalid/whitespace-only input),
-        # set cve_id to None to prevent storing invalid data
+        # raise ValidationError to inform user their CVE ID was rejected
         if not normalized:
-            issue_obj.cve_id = None
-            issue_obj.cve_score = None
+            if original_cve_id:
+                # Non-empty but invalid CVE ID - raise error for user feedback
+                raise ValidationError(f"Invalid CVE ID format: {original_cve_id}. Expected format: CVE-YYYY-NNNN")
+            else:
+                # Empty/whitespace-only - set to None silently
+                issue_obj.cve_id = None
+                issue_obj.cve_score = None
         else:
             # Only update if normalized value differs from original
             if normalized != issue_obj.cve_id:
@@ -859,7 +870,12 @@ class IssueBaseCreate(object):
 
         obj.user_agent = self.request.META.get("HTTP_USER_AGENT")
         # Normalize CVE ID and populate score if available
-        normalize_and_populate_cve_score(obj)
+        try:
+            normalize_and_populate_cve_score(obj)
+        except ValidationError as e:
+            # Add error to form so user sees validation message
+            form.add_error("cve_id", e)
+            return self.form_invalid(form)
         obj.save()
         Points.objects.create(user=self.request.user, issue=obj, score=score)
 
@@ -1496,11 +1512,17 @@ class IssueCreate(IssueBaseCreate, CreateView):
 
             obj.domain = domain
             # Normalize CVE ID and populate score if available
-            normalize_and_populate_cve_score(obj)
-            if obj.cve_id and obj.cve_score is None:
-                messages.warning(
-                    self.request, "Could not fetch CVE score at this time. Issue will be created without it."
-                )
+            try:
+                normalize_and_populate_cve_score(obj)
+                if obj.cve_id and obj.cve_score is None:
+                    messages.warning(
+                        self.request, "Could not fetch CVE score at this time. Issue will be created without it."
+                    )
+            except ValidationError as e:
+                # Show user-friendly error message for invalid CVE ID
+                messages.error(self.request, str(e))
+                # Re-render form with error
+                return self.form_invalid(form)
 
             obj.user_agent = self.request.META.get("HTTP_USER_AGENT")
             obj.save()
@@ -1999,7 +2021,15 @@ def submit_bug(request, pk, template="hunt_submittion.html"):
             cve_id = request.POST.get("cve_id", "").strip() or None
             issue.cve_id = cve_id
             # Normalize CVE ID and populate score if available
-            normalize_and_populate_cve_score(issue)
+            try:
+                normalize_and_populate_cve_score(issue)
+            except ValidationError as e:
+                # Show user-friendly error message for invalid CVE ID
+                messages.error(request, str(e))
+                issue_list = Issue.objects.filter(user=request.user, hunt=hunt).exclude(
+                    Q(is_hidden=True) & ~Q(user_id=request.user.id)
+                )
+                return render(request, template, {"hunt": hunt, "issue_list": issue_list})
             issue.save()
             issue_list = Issue.objects.filter(user=request.user, hunt=hunt).exclude(
                 Q(is_hidden=True) & ~Q(user_id=request.user.id)
