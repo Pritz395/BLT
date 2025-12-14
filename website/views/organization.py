@@ -2878,12 +2878,10 @@ def update_organization_repos(request, slug):
                                         repo.tags.add(tag)
 
                             except Exception as e:
-                                logger.error(f"Error processing repo {repo_name}: {str(e)}", exc_info=True)
-                                yield f"data: $ Error processing {repo_name}. Please try again later.\n\n"
+                                yield f"data: $ Error with {repo_name}: {str(e)[:50]}\n\n"
 
                     except requests.exceptions.RequestException as e:
-                        logger.error(f"Network error in create_message_stream: {str(e)}", exc_info=True)
-                        yield f"data: $ Network error occurred. Please try again later.\n\n"
+                        yield f"data: $ Network error: {str(e)[:50]}\n\n"
                         break
 
                     page += 1

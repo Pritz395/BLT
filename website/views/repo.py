@@ -253,11 +253,12 @@ class RepoDetailView(DetailView):
                             }
                         )
                     except Exception as e:
-                        logger.error(f"Failed to generate AI summary: {str(e)}", exc_info=True)
+                        # Convert the error to a string and return a proper JSON response
+                        error_message = str(e)
                         return JsonResponse(
                             {
                                 "status": "error",
-                                "message": "Failed to generate AI summary. Please try again later.",
+                                "message": f"Failed to generate AI summary: {error_message}",
                             },
                             status=500,
                         )
@@ -270,11 +271,12 @@ class RepoDetailView(DetailView):
                         status=400,
                     )
             except Exception as e:
-                logger.error(f"Unexpected error in generate_ai_summary: {str(e)}", exc_info=True)
+                # Convert the error to a string and return a proper JSON response
+                error_message = str(e)
                 return JsonResponse(
                     {
                         "status": "error",
-                        "message": "An unexpected error occurred. Please try again later.",
+                        "message": f"An unexpected error occurred: {error_message}",
                     },
                     status=500,
                 )
@@ -292,11 +294,11 @@ class RepoDetailView(DetailView):
                     }
                 )
             except Exception as e:
-                logger.error(f"Error refreshing {section}: {str(e)}", exc_info=True)
+                error_message = str(e)
                 return JsonResponse(
                     {
                         "status": "error",
-                        "message": f"An error occurred while refreshing {section}. Please try again later.",
+                        "message": f"An error occurred while refreshing {section}: {error_message}",
                     },
                     status=500,
                 )
@@ -438,9 +440,9 @@ def add_repo(request):
         elif response.status_code != 200:
             error_data = response.json()
             error_message = error_data.get("message", "Failed to fetch repository data")
-            logger.error(f"GitHub API Error: {error_message}", exc_info=True)
+            logger.error(f"GitHub API Error: {error_message}")
             return JsonResponse(
-                {"status": "error", "message": "Failed to fetch repository data from GitHub. Please try again later."},
+                {"status": "error", "message": f"GitHub API Error: {error_message}"},
                 status=response.status_code,
             )
 
@@ -559,9 +561,8 @@ def add_repo(request):
         )
 
     except Exception as e:
-        logger.error(f"Error adding repository: {str(e)}", exc_info=True)
         return JsonResponse(
-            {"status": "error", "message": "An error occurred while adding the repository. Please try again later."},
+            {"status": "error", "message": f"An error occurred: {str(e)}"},
             status=500,
         )
 
@@ -615,12 +616,17 @@ def refresh_repo_data(request, repo_id):
                 }
             )
         except Exception as cmd_error:
-            logger.error(f"Error running command: {str(cmd_error)}", exc_info=True)
+            logger.error(f"Error running command: {str(cmd_error)}")
+            logger.error(f"Error type: {type(cmd_error).__name__}")
+            import traceback
+
+            logger.error(traceback.format_exc())
 
             return JsonResponse(
                 {
                     "status": "error",
-                    "message": "Error running update command. Please try again later.",
+                    "message": f"Error running update command: {str(cmd_error)}",
+                    "error_type": type(cmd_error).__name__,
                 },
                 status=500,
             )
@@ -629,12 +635,17 @@ def refresh_repo_data(request, repo_id):
         logger.warning(f"Repository with ID {repo_id} not found")
         return JsonResponse({"status": "error", "message": "Repository not found"}, status=404)
     except Exception as e:
-        logger.error(f"Error refreshing repository data: {str(e)}", exc_info=True)
+        logger.error(f"Error refreshing repository data: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        import traceback
+
+        logger.error(traceback.format_exc())
 
         return JsonResponse(
             {
                 "status": "error",
-                "message": "An error occurred while refreshing repository data. Please try again later.",
+                "message": f"An error occurred while refreshing repository data: {str(e)}",
+                "error_type": type(e).__name__,
             },
             status=500,
         )
