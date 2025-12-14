@@ -526,10 +526,12 @@ def search_issues(request, template="search.html"):
     if len(query) > MAX_QUERY_LENGTH:
         query = query[:MAX_QUERY_LENGTH]
 
-    # Validate query contains only safe characters (alphanumeric, spaces, hyphens, colons)
+    # Validate query contains only safe characters
+    # Allow common search chars: alphanumeric, spaces, hyphens, colons, dots, underscores, slashes, @
+    # This supports domain searches (example.com), usernames (user_name), CVE IDs, URLs, etc.
     import re
 
-    if not re.match(r"^[a-zA-Z0-9\s\-:]+$", query):
+    if not re.match(r"^[a-zA-Z0-9\s\-\.:_/@]+$", query):
         return render(request, template, {"error": "Invalid query characters"})
 
     # Safe prefix checking with length validation to prevent IndexError

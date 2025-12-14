@@ -74,8 +74,21 @@ def normalize_cve_id(cve_id):
 
 
 def get_cve_cache_key(cve_id):
-    """Generate cache key for CVE data."""
+    """
+    Generate cache key for CVE data.
+    
+    Args:
+        cve_id: CVE identifier (e.g., "CVE-2024-1234")
+    
+    Returns:
+        str: Cache key in format "cve:{normalized_id}"
+    
+    Raises:
+        ValueError: If cve_id is invalid or normalized_id is empty
+    """
     normalized_id = normalize_cve_id(cve_id)
+    if not normalized_id:
+        raise ValueError(f"Invalid CVE ID format: {cve_id}. Expected format: CVE-YYYY-NNNN")
     return f"{CVE_CACHE_KEY_PREFIX}:{normalized_id}"
 
 
@@ -135,7 +148,11 @@ def get_cached_cve_score(cve_id):
         return score
     finally:
         if lock_acquired:
-            cache.delete(lock_key)
+            # Best-effort lock release - don't let cache backend errors break the request
+            try:
+                cache.delete(lock_key)
+            except Exception as e:  # noqa: BLE001  # pylint: disable=broad-except
+                logger.warning("Error releasing cache lock %s: %s", lock_key, e)
 
 
 def fetch_cve_score_from_api(cve_id):

@@ -322,15 +322,14 @@ class IssueViewSet(viewsets.ModelViewSet):
 
                     try:
                         original_cve_id = issue.cve_id
-                        original_cve_score = issue.cve_score
                         normalize_and_populate_cve_score(issue)
                         update_fields = []
                         if issue.cve_id != original_cve_id:
                             update_fields.append("cve_id")
-                        # Always update cve_score if it changed (including None -> None or value -> None)
+                        # Always include cve_score in update_fields after normalization
                         # This ensures stale cve_score values are cleared when NVD lookup returns None
-                        if issue.cve_score != original_cve_score:
-                            update_fields.append("cve_score")
+                        # and ensures the score is persisted even if it didn't change
+                        update_fields.append("cve_score")
                         if update_fields:
                             issue.save(update_fields=update_fields)
                     except Exception as e:
