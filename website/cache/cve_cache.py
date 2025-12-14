@@ -127,8 +127,11 @@ def get_cached_cve_score(cve_id):
             return cached_value
 
         logger.debug("CVE score cache miss for %s, fetching from API", normalized_id)
-        score = fetch_cve_score_from_api(normalized_id)
-        _write_to_cache(cache_key, normalized_id, score)
+        score, had_error = fetch_cve_score_from_api(normalized_id)
+        # Only cache successful responses (score or None for "not found")
+        # Do NOT cache API errors (5xx, network failures) to avoid stale error states
+        if not had_error:
+            _write_to_cache(cache_key, normalized_id, score)
         return score
     finally:
         if lock_acquired:
@@ -143,11 +146,12 @@ def fetch_cve_score_from_api(cve_id):
         cve_id: CVE identifier (e.g., "CVE-2024-1234")
 
     Returns:
-        Decimal score if found, None otherwise
+        tuple: (Decimal score if found else None, had_error: bool)
+        had_error=True means API error occurred (don't cache), False means valid response (can cache)
     """
     normalized_id = normalize_cve_id(cve_id)
     if not normalized_id:
-        return None
+        return None, False  # Valid: invalid CVE format (can cache as "not found")
 
     cve_id = normalized_id
     attempt = 0
@@ -167,15 +171,15 @@ def fetch_cve_score_from_api(cve_id):
 
             if results == 0:
                 logger.debug("No results found for CVE %s", cve_id)
-                return None
+                return None, False  # Valid response: CVE not found (can cache)
 
             vulnerabilities = data.get("vulnerabilities", [])
             if not vulnerabilities:
-                return None
+                return None, False  # Valid response: no vulnerabilities (can cache)
 
             metrics = vulnerabilities[0].get("cve", {}).get("metrics", {})
             if not metrics:
-                return None
+                return None, False  # Valid response: no metrics (can cache)
 
             # Prefer CVSS v3.1, then v3.0, then v2.0
             preferred_versions = ["cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]
@@ -191,24 +195,44 @@ def fetch_cve_score_from_api(cve_id):
                         break
 
             if not cvss_metric_v or not cvss_data:
-                return None
+                return None, False  # Valid response: no CVSS data (can cache)
 
             base_score = cvss_data[0].get("cvssData", {}).get("baseScore")
 
             if base_score is not None:
-                return Decimal(str(base_score))
+                return Decimal(str(base_score)), False  # Valid response: score found (can cache)
 
-            return None
+            return None, False  # Valid response: score is None (can cache)
 
         except requests.exceptions.Timeout:
-            logger.warning("Timeout fetching CVE score for %s", cve_id)
-            return None
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response else None
-            if status_code == 429 and attempt < max_retries - 1:
+            if attempt < max_retries - 1:
                 wait_seconds = _get_backoff_base() * (2**attempt)
                 logger.warning(
-                    "Rate limit exceeded when fetching CVE score for %s; retrying in %.2fs",
+                    "Timeout fetching CVE score for %s; retrying in %.2fs",
+                    cve_id,
+                    wait_seconds,
+                )
+                time.sleep(wait_seconds)
+                attempt += 1
+                continue
+            logger.warning("Timeout fetching CVE score for %s after %d attempts", cve_id, max_retries)
+            return None, True  # Error: timeout (don't cache)
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response else None
+            # Retry on 429 (rate limit) and 5xx (server errors) with exponential backoff
+            if status_code in (429, 500, 502, 503, 504) and attempt < max_retries - 1:
+                wait_seconds = _get_backoff_base() * (2**attempt)
+                if status_code == 429:
+                    # Check Retry-After header for rate limits
+                    retry_after = e.response.headers.get("Retry-After") if e.response else None
+                    if retry_after:
+                        try:
+                            wait_seconds = float(retry_after)
+                        except (ValueError, TypeError):
+                            pass
+                logger.warning(
+                    "HTTP %s error fetching CVE score for %s; retrying in %.2fs",
+                    status_code,
                     cve_id,
                     wait_seconds,
                 )
@@ -217,42 +241,51 @@ def fetch_cve_score_from_api(cve_id):
                 continue
             if status_code == 429:
                 logger.warning(
-                    "Rate limit exceeded when fetching CVE score for %s",
+                    "Rate limit exceeded when fetching CVE score for %s after %d attempts",
                     cve_id,
+                    max_retries,
+                )
+            elif 500 <= status_code < 600:
+                logger.error(
+                    "Server error %s fetching CVE score for %s after %d attempts",
+                    status_code,
+                    cve_id,
+                    max_retries,
                 )
             else:
                 logger.warning(
-                    "HTTP error fetching CVE score for %s: %s",
+                    "HTTP error %s fetching CVE score for %s: %s",
+                    status_code,
                     cve_id,
                     e,
                 )
-            return None
+            return None, True  # Error: HTTP error (don't cache)
         except requests.exceptions.ConnectionError as e:
             logger.warning(
                 "Connection error fetching CVE score for %s: %s",
                 cve_id,
                 e,
             )
-            return None
+            return None, True  # Error: connection failed (don't cache)
         except requests.exceptions.RequestException as e:
             logger.warning(
                 "Request error fetching CVE score for %s: %s",
                 cve_id,
                 e,
             )
-            return None
+            return None, True  # Error: request exception (don't cache)
         except (KeyError, IndexError, ValueError) as e:
             logger.warning("Error parsing CVE response for %s: %s", cve_id, e)
-            return None
+            return None, True  # Error: malformed response (don't cache)
         except Exception as e:  # noqa: BLE001  # pylint: disable=broad-except
             logger.warning(
                 "Unexpected error fetching CVE score for %s: %s",
                 cve_id,
                 e,
             )
-            return None
+            return None, True  # Error: unexpected exception (don't cache)
 
-    return None
+    return None, True  # Error: max retries exceeded (don't cache)
 
 
 def _read_from_cache(cache_key, cve_id):
