@@ -438,7 +438,7 @@ def normalize_and_populate_cve_score(issue_obj):
 
         original_cve_id = issue_obj.cve_id.strip() if issue_obj.cve_id else ""
         normalized = normalize_cve_id(issue_obj.cve_id)
-        
+
         # If normalization returns empty string (invalid/whitespace-only input),
         # raise ValidationError to inform user their CVE ID was rejected
         if not normalized:
