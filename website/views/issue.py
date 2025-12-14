@@ -600,23 +600,35 @@ def search_issues(request, template="search.html"):
             "type": stype,
             "issues": issues,
         }
-    elif stype == "domain" or stype is None:
+    elif stype == "domain":
+        if request.user.is_anonymous:
+            issues = Issue.objects.filter(Q(domain__name__icontains=query), hunt=None).exclude(Q(is_hidden=True))[
+                :limit
+            ]
+        else:
+            issues = Issue.objects.filter(Q(domain__name__icontains=query), hunt=None).exclude(
+                Q(is_hidden=True) & ~Q(user_id=request.user.id)
+            )[:limit]
         context = {
             "query": query,
             "type": stype,
-            "issues": Issue.objects.filter(Q(domain__name__icontains=query), hunt=None).exclude(
-                Q(is_hidden=True) & ~Q(user_id=request.user.id)
-            )[:limit],
+            "issues": issues,
         }
-    elif stype == "user" or stype is None:
+    elif stype == "user":
+        if request.user.is_anonymous:
+            issues = Issue.objects.filter(Q(user__username__icontains=query), hunt=None).exclude(Q(is_hidden=True))[
+                :limit
+            ]
+        else:
+            issues = Issue.objects.filter(Q(user__username__icontains=query), hunt=None).exclude(
+                Q(is_hidden=True) & ~Q(user_id=request.user.id)
+            )[:limit]
         context = {
             "query": query,
             "type": stype,
-            "issues": Issue.objects.filter(Q(user__username__icontains=query), hunt=None).exclude(
-                Q(is_hidden=True) & ~Q(user_id=request.user.id)
-            )[:limit],
+            "issues": issues,
         }
-    elif stype == "label" or stype is None:
+    elif stype == "label":
         label_values = []
         q_lower = query.lower()
 
