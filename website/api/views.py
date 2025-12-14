@@ -332,6 +332,15 @@ class IssueViewSet(viewsets.ModelViewSet):
                         update_fields.append("cve_score")
                         if update_fields:
                             issue.save(update_fields=update_fields)
+                    except ValidationError as e:
+                        # Invalid CVE ID format - clear it and log the error
+                        # The issue will still be created but without the invalid CVE ID
+                        logger.warning(
+                            f"Invalid CVE ID format for issue {issue.id if issue else 'unknown'}: {e}. Clearing CVE ID."
+                        )
+                        issue.cve_id = None
+                        issue.cve_score = None
+                        issue.save(update_fields=["cve_id", "cve_score"])
                     except Exception as e:
                         # Log the error but don't break the transaction
                         # The issue will still be created even if CVE processing fails

@@ -76,13 +76,13 @@ def normalize_cve_id(cve_id):
 def get_cve_cache_key(cve_id):
     """
     Generate cache key for CVE data.
-    
+
     Args:
         cve_id: CVE identifier (e.g., "CVE-2024-1234")
-    
+
     Returns:
         str: Cache key in format "cve:{normalized_id}"
-    
+
     Raises:
         ValueError: If cve_id is invalid or normalized_id is empty
     """
@@ -106,7 +106,14 @@ def get_cached_cve_score(cve_id):
     if not normalized_id:
         return None
 
-    cache_key = get_cve_cache_key(normalized_id)
+    # Defensive: handle potential ValueError from get_cve_cache_key
+    # (shouldn't happen since normalized_id is validated, but be safe)
+    try:
+        cache_key = get_cve_cache_key(normalized_id)
+    except ValueError:
+        # Invalid CVE ID format - return None without caching
+        logger.warning("Invalid CVE ID format in get_cached_cve_score: %s", normalized_id)
+        return None
 
     cached_value, is_hit = _read_from_cache(cache_key, normalized_id)
     if is_hit:

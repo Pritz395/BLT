@@ -550,8 +550,11 @@ def search_issues(request, template="search.html"):
     elif len(query) >= 4 and query[:4].lower() == "cve:":
         stype = "cve"
         query = query[4:].strip()
+        # Check if query is empty after prefix strip
+        if not query:
+            return render(request, template, {"error": "Please enter a CVE ID after 'cve:' (e.g., cve:CVE-2024-1234)"})
         # Validate CVE ID format: CVE-YYYY-NNNN or CVE-YYYY-NNNNN
-        if query and not re.match(r"^CVE-\d{4}-\d{4,7}$", query, re.IGNORECASE):
+        if not re.match(r"^CVE-\d{4}-\d{4,7}$", query, re.IGNORECASE):
             return render(request, template, {"error": "Invalid CVE ID format. Expected: CVE-YYYY-NNNN"})
 
     # Enforce strict pagination limit
