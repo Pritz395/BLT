@@ -173,8 +173,8 @@ class IPRestrictMiddleware:
                     IP.objects.filter(id__in=duplicate_ids).delete()
 
         except TransactionManagementError as e:
-            # Silently ignore transaction errors during test teardown
-            logger.debug(f"Skipping IP recording for {ip} - transaction management error: {str(e)}")
+            # Failed to record IP due to transaction management error
+            logger.warning(f"Failed to record IP {ip} - transaction management error: {str(e)}")
         except Exception as e:
             # Log the error but don't let it break the request
             logger.error(f"Error recording IP {ip}: {str(e)}", exc_info=True)
