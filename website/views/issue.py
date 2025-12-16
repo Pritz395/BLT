@@ -513,12 +513,17 @@ def search_issues(request, template="search.html"):
     query = request.GET.get("query")
     stype = request.GET.get("type")
     context = None
+    
+    # Determine if this is an API request
+    is_api_request = request.path.startswith('/api/')
 
     # Strict pagination limits to prevent DoS
     MAX_QUERY_LENGTH = 200
     MAX_RESULTS = 50
 
     if query is None:
+        if is_api_request:
+            return JsonResponse({"issues": []})
         return render(request, template)
 
     # Normalize and validate query
@@ -532,6 +537,8 @@ def search_issues(request, template="search.html"):
     import re
 
     if not re.match(r"^[a-zA-Z0-9\s\-\.:_/@]+$", query):
+        if is_api_request:
+            return JsonResponse({"error": "Invalid query characters"}, status=400)
         return render(request, template, {"error": "Invalid query characters"})
 
     # Safe prefix checking with length validation to prevent IndexError
@@ -554,7 +561,9 @@ def search_issues(request, template="search.html"):
         # Validate CVE ID format only if query is not empty
         if query and not re.match(r"^CVE-\d{4}-\d{4,7}$", query, re.IGNORECASE):
             error_msg = "Invalid CVE ID format. Expected: CVE-YYYY-NNNN"
-            return HttpResponse(json.dumps({"error": error_msg}), content_type="application/json", status=400)
+            if is_api_request:
+                return JsonResponse({"error": error_msg}, status=400)
+            return render(request, template, {"error": error_msg})
 
     # Enforce strict pagination limit
     try:
@@ -669,9 +678,14 @@ def search_issues(request, template="search.html"):
 
     if request.user.is_authenticated:
         context["wallet"] = Wallet.objects.get(user=request.user)
-    issues = serializers.serialize("json", context["issues"])
-    issues = json.loads(issues)
-    return HttpResponse(json.dumps({"issues": issues}), content_type="application/json")
+    
+    # Return appropriate response based on request type
+    if is_api_request:
+        issues = serializers.serialize("json", context["issues"])
+        issues = json.loads(issues)
+        return JsonResponse({"issues": issues})
+    else:
+        return render(request, template, context)
 
 
 def generate_bid_image(request, bid_amount):
