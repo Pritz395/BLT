@@ -513,9 +513,9 @@ def search_issues(request, template="search.html"):
     query = request.GET.get("query")
     stype = request.GET.get("type")
     context = None
-    
+
     # Determine if this is an API request
-    is_api_request = request.path.startswith('/api/')
+    is_api_request = request.path.startswith("/api/")
 
     # Strict pagination limits to prevent DoS
     MAX_QUERY_LENGTH = 200
@@ -678,7 +678,7 @@ def search_issues(request, template="search.html"):
 
     if request.user.is_authenticated:
         context["wallet"] = Wallet.objects.get(user=request.user)
-    
+
     # Return appropriate response based on request type
     if is_api_request:
         issues = serializers.serialize("json", context["issues"])
