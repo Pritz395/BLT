@@ -420,26 +420,30 @@ def _release_cache_lock(lock_key, expected_token):
 def _wait_for_cache_fill(cache_key, cve_id):
     """
     Wait briefly for another worker to populate the cache.
-
     Returns immediately if cache is populated, otherwise waits up to
     the configured wait timeout seconds with short intervals to avoid
     blocking the worker thread for extended periods.
     """
     wait_timeout = _get_lock_wait_timeout()
     wait_interval = _get_lock_wait_interval()
+    # Normalize misconfigured interval: must be positive
+    if wait_interval <= 0:
+        # Fallback to a small sane default, capped by timeout if needed
+        if wait_timeout > 0:
+            wait_interval = min(wait_timeout, 0.2)
+        else:
+            wait_interval = 0.2
     deadline = time.monotonic() + wait_timeout
     iterations = 0
-    # Ensure at least 1 iteration even if interval > timeout (edge case)
+    # Ensure at least one iteration even if interval > timeout
     max_iterations = max(1, int(wait_timeout / wait_interval))
-
     while iterations < max_iterations:
         cached_value, is_hit = _read_from_cache(cache_key, cve_id)
         if is_hit:
             return cached_value, True
-        # Only sleep if we're not at the deadline
+        # Only sleep if we're not yet past the deadline
         if time.monotonic() < deadline:
             time.sleep(wait_interval)
-            iterations += 1
-        else:
-            break
+        iterations += 1
+    # Timed out waiting for another worker to fill cache
     return None, False
